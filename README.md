@@ -8,6 +8,8 @@
 | ------- | ---------------------------- |
 | ISA     | Instruction Set Architecture |
 | F/D/E/  | Fetch... Decode... Execute   |
+| RD      | Register Destination         |
+| RS      | Register Source              |
 
 
 ### Instruction Set
@@ -86,8 +88,8 @@ Fetch:
 
 
 Decode:
-    - Decodes the current instruction
-
+    - Decodes the current instruction by splitting up the ASCII text into the instruction, RD, RS_1 and RS_2 the CIR and converting it into 
+     
 Execute:
     - Executes the decoded instruction
 

@@ -16,6 +16,7 @@ void execute();
 
 /* Non-ISA function headers */
 void loadProgramIntoMemory();
+std::vector<std::string> split(std::string str, char deliminator);
 
 /* Debugging function headers*/
 void outputAllMemory();
@@ -29,7 +30,7 @@ enum Instruction {
     HALT
 };
 
-#pragma reigon Registers
+#pragma region Registers
 /* Registers */
 enum Registers {
     R0,
@@ -51,7 +52,7 @@ std::array<int, 16> registers;    // All 16 general purpose registers
 int pc;                     // Program Counter
 std::string cir;            // Current Instruction Register
 
-#pragma endreigon Registers
+#pragma endregion Registers
 
 
 /* System Flags */
@@ -115,20 +116,30 @@ void fetch(){
     // Load the memory address that is in the instruction memory address that is pointed to by the PC
     cir = instrMemory.at(pc);
 
+    /* We DO NOT UPDATE the PC here but instead we do it in the DECODE stage as this will help with pipelining branches later on */
     // Instead of incrementing the PC here we could use a NPC which is used by MIPS and stores the next sequential PC
     // Increment PC
-    pc++;
+    //pc++;
 
     std::cout << "Fetching instruction: " << cir << std::endl;
 }
 
 
 // Takes current instruction that is being used and decodes it so that it can be understood by the computer (not a massively important part)
+// Updates PC
 void decode(){
     std::cout << "Decoding instruction" << std::endl;
-    std::split(); // split the instruction based on ' ' and decode instruction like that
+    std::vector<std::string> splitCIR = split(cir, ' '); // split the instruction based on ' ' and decode instruction like that
+    
+    // Throws error if there isn't any instruction to be loaded
+    if (splitCIR.size() == 0) throw std::invalid_argument("No instruction loaded");
 
+    // if statement for decoding all instructions
+    if (splitCIR.at(0).compare("ADD")) {
+        
+    }
 }
+
 
 // Executes the current instruction
 void execute(){
@@ -148,6 +159,7 @@ void execute(){
 #pragma endregion F/D/E/
 
 
+#pragma region helperFunctions
 // Not part of the ISA, loads an I/O program stored in a text file into 
 void loadProgramIntoMemory(std::string pathToProgram){
     std::ifstream program(pathToProgram);
@@ -164,6 +176,27 @@ void loadProgramIntoMemory(std::string pathToProgram){
         counter++;
     }
 }
+
+// Splits a string by a delminiter and returns it as a std::vector<std::string>
+std::vector<std::string> split(std::string str, char deliminator){
+        int oldIndex = 0;
+
+        std::vector<std::string> out;
+
+        if (str.length() == 0) return out;
+
+        for (int i = 0; i < str.length(); i++){
+                if ((str[i] == deliminator) && (oldIndex != i)){
+                        out.push_back(str.substr(oldIndex, i - oldIndex));
+                        oldIndex = i + 1;
+                }
+        }
+        std::string subString = str.substr(oldIndex, str.length() - oldIndex);
+        out.push_back(subString);
+        return out;
+}
+
+#pragma endregion helperFunctions
 
 
 
