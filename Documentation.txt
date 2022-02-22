@@ -1,0 +1,78 @@
+ISA
+
+Definitions and acronyms:
+    - ISA       - Instruction Set Architecture
+    - F/D/E     - Fetch... Decode... Execute
+
+
+The instruction set architecture will be a 3 operand architecture - this is done as it is more efficent than 2 operand instructions (however it is not any more powerful)
+
+The list of instructions that have been implemented are:
+    - ADD rd, rs, rs            - Adds the values that are directly in 
+    - ADDI rd, rs, n            - Adds the immediate value to rs and stores it in rd
+    - ADDII rd, n, m            - Adds the 2 immediate values and saves it into the rd    // Might not be super useful
+    
+    - SUB rd, r1, r2            - Subtracts r2 from r1 (r1 - r2) and saves result in rd
+
+    - MUL rd, rs, rs            - Multiply both rs and the rs together and store in rd
+    - DIV rd, rs, rs            - 
+
+    - LD rd, rs                 - Loads the value that is held in the address which is directly stored in rs
+    - LDI rd, const             - Immediate loading of a constant into rd
+    - LD                        - Indirect loading - loads the address which the address in rs is pointing to       // MIGHT BE ABLE TO COMBINE THE NORMAL LOAD WITH THIS ONE
+    - LDS rd, rs, const         - Scalar loading - loads the value starting from rs with a scaled index const into rd
+
+    - STO rd, rs                - Stores the value that is in rs into the address which is directly found in rd 
+
+            - LDI rd, const             - Loads the immediate constant into the rd
+            - LDA rd, address           - Load from the value in the address
+            - LD rd, rs                 - Loads the address which is found value from the which is in the 
+            - LDS rd, rs                - L
+            - STOI const, rs            - Stores the 
+            - STOA rd, 
+
+    - AND rd, rs, rs            - Logical and between both rs - result in rd
+    - OR                        - Logical or between both rs - result in rd
+    - NOT rd, rs                - Logical NOT for a register - result in rd
+    - LSHFTI rd, need           - Left shift by the immediate 
+    - LSHIFT rd, rs             - Left shift with v
+
+    - BRANCH
+
+
+
+    - RET                       - Return from procedure
+    - HALT                      - Stops the program (and rings a bell)
+
+
+Registers for the ISA are defined below and are currently stored in seperate variables but will be stored as a single arrray which acts as register file:
+    - Special Registers
+        - CIR       - Current Instruction Register  - holds the current instruction that is being F/D/E
+        - PC        - Program Counter               - Stores the address of the current instruction
+        - NPC       - Might need to implement a NEXT Program counter - this would be used to keep track of the next address to run from with the PC keeping track of the Current instruction ONLY
+
+    - General Purpose Registers
+        - r0 - r15  - All general purpose registers
+
+
+System flags to indentify what state the processor is currently in: - Not 100% sure if we need them but they might be super useful????
+
+
+
+Memory
+    - Currently the implementation for how memory works is quite simple, there is only an instruction memory and a data memory, the instruction memory is 
+
+
+
+The below is all related to each phase of an instruction and how it runs in the pipeline
+
+
+Fetch:
+    - The fetch in this program will us the current address that is in the program counter PC - this means that we need to increment the PC after we have fetched the instuction; if we increment before we will miss the first instruction.
+
+
+Decode:
+    - Decodes the current instruction
+
+Execute:
+    - Executes the decoded instruction

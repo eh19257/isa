@@ -1,0 +1,5 @@
+LDI r1, 5
+LDI r2, 10
+ADD r0, r1, r2
+STO r0, r3
+HALT

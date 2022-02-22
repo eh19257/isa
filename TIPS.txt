@@ -1,0 +1,13 @@
+MAKE A DEBUG MODE!!!
+VERSION CONTROL
+ISAs of ~20 instructions not to much needed
+
+Output stats and all --> this is very important and we need a full on experiment - this means that the program should be written a lot earlier than thought so then there is ample time to run stats on.
+
+Research into load store queues (LSQ) and register Alias table (RAT)
+
+
+Instruction memory is read only and so we dont need to share instruction and memory space but we can - that might look nicer.
+
+
+Programs to be selected such that they can test all the nstructions for example a loop in a program could be used to test branches.
