@@ -16,11 +16,12 @@
 
 The instruction set architecture will be a 3 operand architecture - this is done as it is more efficent than 2 operand instructions (however it is not any more powerful)
 
-| Instruction    | Definition                                           | Notes                     |
-| -------------- | ---------------------------------------------------- | ------------------------- |
-| ADD rd, rs, rs | Adds the values that are directly in                 |                           |
-| ADDI rd, rs, n | Adds the immediate value to rs and stores it in rd   |                           |
-| ADDII rd, n, m | Adds the 2 immediate values and saves it into the rd | Might not be super useful |
+| Implemented | Instruction    | Definition                                           | Notes                     |
+| ----------- | -------------- | ---------------------------------------------------- | ------------------------- |
+| #           | ADD rd, rs, rs | Adds the values that are directly in                 |                           |
+|             | ADDI rd, rs, n | Adds the immediate value to rs and stores it in rd   | NOT IMPLEMENTED YET       |
+|             | ADDII rd, n, m | Adds the 2 immediate values and saves it into the rd | Might not be super useful |
+| #           | HALT           | Ends the program                                     |                           |
 
 
 The list of instructions that have been implemented are:
@@ -61,11 +62,19 @@ The list of instructions that have been implemented are:
     - HALT                      - Stops the program (and rings a bell)
 
 
+### Registers
+
 Registers for the ISA are defined below and are currently stored in seperate variables but will be stored as a single arrray which acts as register file:
-    - Special Registers
-        - CIR       - Current Instruction Register  - holds the current instruction that is being F/D/E
-        - PC        - Program Counter               - Stores the address of the current instruction
-        - Might need to implement a NEXT Program counter - this would be used to keep track of the next address to run from with the PC keeping track of the Current instruction ONLY
+
+#### Special Registers
+
+| Acronym | Register Name                | Use                                               | Notes                          |
+| ------- | ---------------------------- | ------------------------------------------------- | ------------------------------ |
+| CIR     | Current Instruction Register | holds the current instruction that is being F/D/E |                                |
+| PC      | Program Counter              | Stores the address of the current instruction     |                                |
+| Imm     | Immediate                    | Holds the value for the a current immediate       | Not currently used/implemented |
+
+Might need to implement a NEXT Program counter - this would be used to keep track of the next address to run from with the PC keeping track of the Current instruction ONLY
 
     - General Purpose Registers
         - r0 - r15  - All general purpose registers

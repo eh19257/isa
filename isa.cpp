@@ -19,44 +19,39 @@ void loadProgramIntoMemory();
 std::vector<std::string> split(std::string str, char deliminator);
 
 /* Debugging function headers*/
-void outputAllMemory();
+void outputAllMemory(int cutOff);
 void printRegisterFile();
+std::string padWithSpaces(std::string str, int n);
 
 /* Instructions */
 enum Instruction {
     ADD,
     LDI,
     STO,
-    HALT
+    HALT,
+    NOP
 };
 
 #pragma region Registers
 /* Registers */
-enum Registers {
-    R0,
-    R1,
-    R2,
-    R3,
-    R4,
-    R5,
-    R6,
-    R7,
-    R8,
-    PC,
-    CIR
-};
+enum Registers { R0, R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13, R14, R15 };
 
 /* "Register File" - currently just a bunch of variables */
-std::array<int, 16> registers;    // All 16 general purpose registers
+std::array<int, 16> registerFile;    // All 16 general purpose registers
 
-int pc;                     // Program Counter
-std::string cir;            // Current Instruction Register
+int PC;                     // Program Counter
+std::string CIR;            // Current Instruction Register
+int IMMEDIATE;              // Immediate register used for immediate addressing
+    
+// ALU registers
+int ALU0, ALU1, ALU_Out;
 
 #pragma endregion Registers
 
 
 /* System Flags */
 bool systemHaltFlag = false;
+Instruction operationTypeFlag = NOP; 
 
 /* Memory */
 std::array<std::string, SIZE_OF_INSTRUCTION_MEMORY> instrMemory;
@@ -64,21 +59,23 @@ std::array<int, SIZE_OF_DATA_MEMORY> dataMemory;
 
 #pragma region debugging
 
-void outputAllMemory(){
+void outputAllMemory(int cutOff){
     std::string emptyLine = "--------------------------------";     // 32 '-'s to show an empty line
 
     std::cout << "\tInstruction Memory" << "              \t\t\t" << "Data Memory\n" << std::endl;
     for (int i = 0; i < SIZE_OF_INSTRUCTION_MEMORY || i < SIZE_OF_DATA_MEMORY; i++){
+        if (i > cutOff) break;      // Used to trim the end of the output
+        
+        std::string line;
         std::cout << i << "\t";
         if (i < instrMemory.size()){
             if (instrMemory.at(i).empty()){
-                std::cout << emptyLine;
+                line = emptyLine;
             } else {
-                std::cout << instrMemory.at(i);
+                line = padWithSpaces(instrMemory.at(i), 32);
             }
-        }
-        /*
-        std::cout << "\t\t\t";
+        }        
+        std::cout << line ;//<<;// "\t\t\t";
         if (i < dataMemory.size()){
             if (dataMemory.at(i)){
                 std::cout << emptyLine;
@@ -86,75 +83,105 @@ void outputAllMemory(){
                 std::cout << dataMemory.at(i);
             }
         }
-        */
         std::cout << std::endl;
+    } std::cout << std::endl;
+}
+
+// Pads the input string with spaces such that the entire length of the output is of size n
+std::string padWithSpaces(std::string str, int n){
+    std::string out = str;
+    for (int i = 0; i < n - str.size(); i++){
+        out.push_back(' ');
+        //std::cout << i << std::endl;
     }
+    return out;
 }
 
 void printRegisterFile(){
-
-    //std::cout <<
+    // DOES NOTHING ATM
 }
 
 #pragma endregion debugging
 
+#pragma region F/D/E/
+
 // The main cycle of the processor
 void cycle(){
+    int numOfCycles = 0;
     //registers[R0] = 123;
     while (!systemHaltFlag) {
+        std::cout << "---------- Cycle " << numOfCycles << " starting ----------"<< std::endl;
+        numOfCycles++;
+        std::cout << "PC has current value: " << PC << std::endl;
         fetch();
         decode();
         execute();
-        //std::cout << "Value of general register 0: " << reg.at(ADD) << std::endl;
+
+        std::cout << "---------- Cycle " << numOfCycles << " completed. ----------\n"<< std::endl;
     }
 }
 
-#pragma region F/D/E/
 
 // Fetches the next instruction that is to be ran, this instruction is fetched by taking the PCs index 
 void fetch(){
     // Load the memory address that is in the instruction memory address that is pointed to by the PC
-    cir = instrMemory.at(pc);
+    CIR = instrMemory.at(PC);
 
     /* We DO NOT UPDATE the PC here but instead we do it in the DECODE stage as this will help with pipelining branches later on */
     // Instead of incrementing the PC here we could use a NPC which is used by MIPS and stores the next sequential PC
     // Increment PC
     //pc++;
 
-    std::cout << "Fetching instruction: " << cir << std::endl;
+    std::cout << "CIR has current value: " << CIR << std::endl;
+    std::cout << "Fetched... ";
 }
 
 
 // Takes current instruction that is being used and decodes it so that it can be understood by the computer (not a massively important part)
 // Updates PC
 void decode(){
-    std::cout << "Decoding instruction" << std::endl;
-    std::vector<std::string> splitCIR = split(cir, ' '); // split the instruction based on ' ' and decode instruction like that
+    std::vector<std::string> splitCIR = split(CIR, ' '); // split the instruction based on ' ' and decode instruction like that
     
     // Throws error if there isn't any instruction to be loaded
     if (splitCIR.size() == 0) throw std::invalid_argument("No instruction loaded");
 
     // if statement for decoding all instructions
-    if (splitCIR.at(0).compare("ADD")) {
-        
-    }
+         if (splitCIR.at(0).compare("ADD") == 0) operationTypeFlag = ADD;
+    else if (splitCIR.at(0).compare("LDI") == 0) operationTypeFlag = LDI;
+    else if (splitCIR.at(0).compare("STO") == 0) operationTypeFlag = STO;
+    else if (splitCIR.at(0).compare("HALT") == 0) operationTypeFlag = HALT;
+    else if (splitCIR.at(0).compare("NOP") == 0) operationTypeFlag = NOP;
+
+    // Increment PC
+    PC++;
+
+    std::cout << "Decoded... ";
 }
 
 
 // Executes the current instruction
-void execute(){
-    std::cout << "Executing instruction" << std::endl;
+void execute(){ 
+    switch (operationTypeFlag){
+        case ADD:
+            ALU_Out = ALU0 + ALU1;
+            break;
+        case LDI:
+            ALU_Out = IMMEDIATE;
+            break;
+        case STO:
+            break;
+        case HALT:
+            systemHaltFlag = true;
+            break;
+        case NOP:
+            break;
+        default:
+            std::cout << "Instruction not understood!!" << std::endl;
+            break;
 
-    std::string instr = cir.substr(0, 4);
-
-    /*
-    // switch case wont work unless you convert them into enums - this is because c++ can't compare std::strings
-    switch(instr){
-        case std::string("HALT"){
-
-        }
     }
-    */
+
+    std::cout << "Executed... " << std::endl;
 }
 #pragma endregion F/D/E/
 
@@ -202,12 +229,10 @@ std::vector<std::string> split(std::string str, char deliminator){
 
 int main(){
     loadProgramIntoMemory("program");
-    outputAllMemory();
-    /*
-    pc = 0;
+    outputAllMemory(8);
     cycle();
-    */
-   cycle();
+    std::cout << "Program has been halted" << std::endl;
+    //outputAllMemory();
 }
 
 
