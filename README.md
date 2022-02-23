@@ -16,16 +16,38 @@
 
 The instruction set architecture will be a 3 operand architecture - this is done as it is more efficent than 2 operand instructions (however it is not any more powerful)
 
-| Implemented | Instruction    | Definition                                           | Notes                     |
-| ----------- | -------------- | ---------------------------------------------------- | ------------------------- |
-| #           | ADD rd, rs, rs | Adds the values that are directly in                 |                           |
-|             | ADDI rd, rs, n | Adds the immediate value to rs and stores it in rd   | NOT IMPLEMENTED YET       |
-|             | ADDII rd, n, m | Adds the 2 immediate values and saves it into the rd | Might not be super useful |
-| #           | HALT           | Ends the program                                     |                           |
+| Implemented | Instruction     | Definition                                                                                  | Notes                                                            |
+| ----------- | --------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| #           | ADD rd rs1 rs2  | Adds the values that are directly in                                                        |                                                                  |
+| #           | ADDI rd rs1 n   | Adds the immediate value to rs and stores it in rd                                          |                                                                  |
+| #           | SUB rd rs1, rs2 | Subtracts rs2 from rs1 and puts it in rd (rd= rs1 - rs2)                                    |                                                                  |
+| #           | MUL rd rs1 rs2  | Multiples rs1 and rs2 and the value goes into rd (rd = rs1*rs2)                             | Multiple passes required but not currently implemented           |
+| #           | DIV rd rs1 rs2  | Integer divsion of rs1 by rs2 with the result stored in rd (rd = rs1 // rs2)                |                                                                  |
+| #           | CMP rd rs1 rs2  | Compares rs1 and rs2; if rs1 < rs2, rd = 1; if rs1 = rs2, rd = 0; if rs1 > rs2, rd = 1      |                                                                  |
+|             |                 |                                                                                             |                                                                  |
+| #           | LD rd rs        | Loads a value into rd from the address stored in rs                                         | Made redundent by LDA                                            |
+| #           | LDI rd n        | Loads an immediate value n into the register rd                                             |                                                                  |
+| #           | LID rd rs       | Loads the value into rd from the address that is pointed to by the address in rd            | Multiple passes required but not currently implemented           |
+| #           | LDA rd rs1 rs2  | Loads the value indexed rs2 addresses away from rs1 into rd                                 |                                                                  |
+| ////        | LDS rd rs1 rs2  | Loads the value indexed                                                                     |                                                                  |
+|             |                 |                                                                                             |                                                                  |
+| #           | STO rd rs       | Stores the value that is in rs into the address that is found in rd                         |                                                                  |
+| #           | STOI rd n       | Stores a value into an immediate address                                                    |                                                                  |
+|             |                 |                                                                                             |                                                                  |
+| #           | AND rd rs1 rs2  | Bitwise logical and operation between rs1 and rs2 - result in rd                            |                                                                  |
+| #           | OR rd rs1 rs2   | Bitwise logical OR operation between rs1 and rs2, result stored in rd                       |                                                                  |
+| #           | NOT rd rs       | Bitwise logical NOT operation on rs, result stored in rd                                    |                                                                  |
+| #           | LSHFT rd rs n   | Leftshift operation on rs by n bits, result stored in rd                                    | Maybe change so that the value is shifted by rs not an immediate |
+| #           | RSHFT rd rs n   | Rightshift operation on rs by n bits, results stored in rs                                  | Maybe change so that the value is shifted by rs not an immediate |
+|             |                 |                                                                                             |                                                                  |
+|             | B rs            | Branches to the absolute value stored in rs (loads this address into the PC)                |                                                                  |
+|             | BI rs1 rs2      | Branches to the address stored rs2 addresses away from rs1 (loads this address into the PC) |                                                                  |
+| #           | HALT            | Ends the program                                                                            |                                                                  |
+| #           | NOP             | No operation                                                                                |                                                                  |
+|             |                 |                                                                                             |                                                                  |
 
 
 The list of instructions that have been implemented are:
-    - ADD rd, rs, rs            - Adds the values that are directly in 
     - ADDI rd, rs, n            - Adds the immediate value to rs and stores it in rd
     - ADDII rd, n, m            - Adds the 2 immediate values and saves it into the rd    // Might not be super useful
     

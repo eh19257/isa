@@ -22,16 +22,34 @@ std::string CIR;            // Current Instruction Register
 int IMMEDIATE;              // Immediate register used for immediate addressing
     
 // ALU registers
-int  ALU0, ALU1; //ALU_OUT
-Register ALU_OutPointer;
+int  ALU0, ALU1; //ALU_OUT  // 2 input regsiters for the ALU
+Register ALUD;              // Destination register of the ALU
 
 #pragma endregion Registers
 
 /* Instructions */
 enum Instruction {
     ADD,
+    ADDI,
+    SUB,
+    MUL,
+    DIV,
+    CMP,
+
+    LD,
     LDI,
+    LID,
+    LDA,
+
     STO,
+    STOI,
+
+    AND,
+    OR,
+    NOT,
+    LSHFT,
+    RSHFT,
+
     HALT,
     NOP
 };
@@ -98,7 +116,7 @@ void printRegisterFile(int maxReg){
     std::cout << "IMMEDIATE: " << IMMEDIATE << std::endl;
     std::cout << "ALU0: " << ALU0 << std::endl;
     std::cout << "ALU1: " << ALU1 << std::endl;
-    std::cout << "ALU_OutPointer: " << ALU_OutPointer << std::endl;
+    std::cout << "ALUD: " << ALUD << std::endl;
 }
 
 #pragma endregion debugging
@@ -151,7 +169,7 @@ void decode(){
     // Load the register values into the ALU's input
     if (splitCIR.size() > 1) {
         // Get set first/destination register
-        if (splitCIR.at(1).substr(0,1).compare("r") == 0 ) ALU_OutPointer = strToRegister(splitCIR.at(1));
+        if (splitCIR.at(1).substr(0,1).compare("r") == 0 ) ALUD = strToRegister(splitCIR.at(1));
 
         if (splitCIR.size() > 2) {
             if (splitCIR.at(2).substr(0,1).compare("r") == 0 ) ALU0 = registerFile.at(strToRegister(splitCIR.at(2)));
@@ -163,11 +181,29 @@ void decode(){
         }
     }
     // if statement for decoding all instructions
-         if (splitCIR.at(0).compare("ADD") == 0) operationTypeFlag = ADD;
-    else if (splitCIR.at(0).compare("LDI") == 0) { operationTypeFlag = LDI; IMMEDIATE = stoi(splitCIR.at(2)); }
-    else if (splitCIR.at(0).compare("STO") == 0) { operationTypeFlag = STO; IMMEDIATE = stoi(splitCIR.at(1)); }
+         if (splitCIR.at(0).compare("ADD")  == 0) operationTypeFlag = ADD;
+    else if (splitCIR.at(0).compare("ADDI") == 0) { operationTypeFlag = ADDI; IMMEDIATE = stoi(splitCIR.at(3)); }
+    else if (splitCIR.at(0).compare("SUB")  == 0) operationTypeFlag = SUB;
+    else if (splitCIR.at(0).compare("MUL")  == 0) operationTypeFlag = MUL;
+    else if (splitCIR.at(0).compare("DIV")  == 0) operationTypeFlag = DIV;
+    else if (splitCIR.at(0).compare("CMP")  == 0) operationTypeFlag = CMP;
+
+    else if (splitCIR.at(0).compare("LD")   == 0) operationTypeFlag = LD;
+    else if (splitCIR.at(0).compare("LDI")  == 0) { operationTypeFlag = LDI; IMMEDIATE = stoi(splitCIR.at(2)); }
+    else if (splitCIR.at(0).compare("LID")  == 0) operationTypeFlag = LID;
+    else if (splitCIR.at(0).compare("LDA")  == 0) operationTypeFlag = LDA;
+    
+    else if (splitCIR.at(0).compare("STO") == 0) operationTypeFlag = STO;
+    else if (splitCIR.at(0).compare("STOI") == 0) { operationTypeFlag = STOI; IMMEDIATE = stoi(splitCIR.at(1)); }
+
+    else if (splitCIR.at(0).compare("AND") == 0) operationTypeFlag = AND;
+    else if (splitCIR.at(0).compare("OR") == 0) operationTypeFlag = OR;
+    else if (splitCIR.at(0).compare("NOT") == 0) operationTypeFlag = NOT;
+    else if (splitCIR.at(0).compare("LSHFT") == 0) operationTypeFlag = LSHFT;
+    else if (splitCIR.at(0).compare("RSHFT") == 0) operationTypeFlag = RSHFT;
+
     else if (splitCIR.at(0).compare("HALT") == 0) operationTypeFlag = HALT;
-    else if (splitCIR.at(0).compare("NOP") == 0) operationTypeFlag = NOP;
+    else if (splitCIR.at(0).compare("NOP")  == 0) operationTypeFlag = NOP;
 
     // Increment PC
     PC++;
@@ -180,13 +216,56 @@ void decode(){
 void execute(){ 
     switch (operationTypeFlag){
         case ADD:
-            registerFile[ALU_OutPointer] = ALU0 + ALU1;
+            registerFile[ALUD] = ALU0 + ALU1;
             break;
+        case ADDI:
+            registerFile[ALUD] = ALU0 + IMMEDIATE;
+            break;
+        case SUB:
+            registerFile[ALUD] = ALU0 - ALU1;
+            break;
+        case MUL:
+            registerFile[ALUD] = ALU0 * ALU1;
+            break;
+        case DIV:
+            registerFile[ALUD] = (int) ALU0 / ALU1;
+            break;
+        case CMP:
+            if      (ALU0 < ALU1) registerFile[ALUD] = -1;
+            else if (ALU0 > ALU1) registerFile[ALUD] =  1;
+            else                  registerFile[ALUD] =  0;
+            break;
+        case LD:
+            registerFile[ALUD] = dataMemory[ALU0];
         case LDI:
-            registerFile[ALU_OutPointer] = IMMEDIATE;
+            registerFile[ALUD] = IMMEDIATE;
+            break;
+        case LID:
+            registerFile[ALUD] = dataMemory[dataMemory[ALU0]];
+            break;
+        case LDA:
+            registerFile[ALUD] = dataMemory[ALU0 + ALU1];
             break;
         case STO:
+            dataMemory[ALUD] = ALU0;
+            break;
+        case STOI:
             dataMemory[IMMEDIATE] = ALU0;
+            break;
+        case AND:
+            registerFile[ALUD] = ALU0 & ALU1;
+            break;
+        case OR:
+            registerFile[ALUD] = ALU0 | ALU1;
+            break;
+        case NOT:
+            registerFile[ALUD] = ~ALU0;
+            break;
+        case LSHFT:
+            registerFile[ALUD] = ALU0 << ALU1;
+            break;
+        case RSHFT:
+            registerFile[ALUD] = ALU0 >> ALU1;
             break;
         case HALT:
             systemHaltFlag = true;
@@ -258,7 +337,7 @@ int main(){
     loadProgramIntoMemory("program");
     outputAllMemory(8);
     cycle();
-    std::cout << "Program has been halted" << std::endl;
+    std::cout << "Program has been halted\n" << std::endl;
     outputAllMemory(8);
 }
 
