@@ -10,27 +10,6 @@
 const int SIZE_OF_INSTRUCTION_MEMORY = 256;     // size of the read-only instruction memory
 const int SIZE_OF_DATA_MEMORY = 256;            // pretty much the heap and all
 
-/* Registers */
-#pragma region Registers
-enum Register { R0, R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13, R14, R15 };
-
-/* "Register File" - currently just a bunch of variables */
-std::array<int, 16> registerFile;    // All 16 general purpose registers
-
-int PC;                     // Program Counter
-std::string CIR;            // Current Instruction Register
-int IMMEDIATE;              // Immediate register used for immediate addressing
-    
-// ALU registers
-Instruction opCodeRegister = NOP;       // Stores the decoded OpCode that was in the CIR
-int  ALU0, ALU1, ALU_OUT;               // 2 input regsiters for the ALU
-Register ALUD;                          // Destination register for the output of the ALU
-
-// Memory Related Registers
-Register MEMD;                          // Destination address for the position in memory (STO operation) or the register in the register file (LD operation)
-
-#pragma endregion Registers
-
 /* Instructions */
 enum Instruction {
     ADD,
@@ -64,9 +43,39 @@ enum Instruction {
     NOP
 };
 
-/* System Flags */
-bool systemHaltFlag = false;
+/* Registers */
+#pragma region Registers
+enum Register { R0, R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13, R14, R15 };
 
+/* "Register File" - currently just a bunch of variables */
+std::array<int, 16> registerFile;    // All 16 general purpose registers
+
+int PC;                     // Program Counter
+std::string CIR;            // Current Instruction Register
+int IMMEDIATE;              // Immediate register used for immediate addressing
+    
+// ALU registers
+Instruction OpCodeRegister = NOP;       // Stores the decoded OpCode that was in the CIR
+int  ALU0, ALU1, ALU_OUT;               // 2 input regsiters for the ALU
+int ALUD;                          // Destination register for the output of the ALU
+
+// MEMORY ACCESS Registers
+int MEMD;                          // Destination address for the position in memory (STO operation) or the register in the register file (LD operation)
+int MEM_OUT;                            // Output of the memory (only used in load operations)
+
+// WRITE BACK registers
+int WBD;                           // Write back destination - stores the destination register for the memory in the memory output to be stored/held
+
+#pragma endregion Registers
+
+/* System Flags */
+bool systemHaltFlag = false;            // If true, the system halts
+
+bool memoryReadFlag = false;            // Used pass on instruction information on whether an instruction is needed to READ from memory (used in the MEMORY ACCESS stage)
+bool memoryWriteFlag = false;           // Used pass on instruction information on whether an instruction is needed to WRITE to memory (used in the MEMORY ACCESS stage)
+
+bool MEM_writeBackFlag = false;
+bool writeBackFlag = false;
 
 /* Memory */
 std::array<std::string, SIZE_OF_INSTRUCTION_MEMORY> instrMemory;
@@ -128,7 +137,15 @@ void printRegisterFile(int maxReg){
     std::cout << "IMMEDIATE: " << IMMEDIATE << std::endl;
     std::cout << "ALU0: " << ALU0 << std::endl;
     std::cout << "ALU1: " << ALU1 << std::endl;
+    std::cout << "ALU_OUT: " << ALU_OUT << std::endl;
     std::cout << "ALUD: " << ALUD << std::endl;
+    std::cout << "\nMEMD: " << MEMD << std::endl;
+    std::cout << "MEM_OUT: " << MEM_OUT << std::endl;
+    std::cout << "memoryReadFlag: " << memoryReadFlag << std::endl;
+    std::cout << "memoryWriteFlag: " << memoryWriteFlag << std::endl;
+    std::cout << "MEM_writeBackFlag: " <<MEM_writeBackFlag << std::endl;
+    std::cout << "\nWBD: " << WBD << std::endl;
+    std::cout << "writeBackFlag: " << writeBackFlag << std::endl;
 }
 
 #pragma endregion debugging
@@ -195,35 +212,35 @@ void decode(){
         }
     }
     // if statement for decoding all instructions
-         if (splitCIR.at(0).compare("ADD")  == 0) opCodeRegister = ADD;
-    else if (splitCIR.at(0).compare("ADDI") == 0) { opCodeRegister = ADDI; IMMEDIATE = stoi(splitCIR.at(3)); }
-    else if (splitCIR.at(0).compare("SUB")  == 0) opCodeRegister = SUB;
-    else if (splitCIR.at(0).compare("MUL")  == 0) opCodeRegister = MUL;
-    else if (splitCIR.at(0).compare("DIV")  == 0) opCodeRegister = DIV;
-    else if (splitCIR.at(0).compare("CMP")  == 0) opCodeRegister = CMP;
+         if (splitCIR.at(0).compare("ADD")  == 0) OpCodeRegister = ADD;
+    else if (splitCIR.at(0).compare("ADDI") == 0) { OpCodeRegister = ADDI; IMMEDIATE = stoi(splitCIR.at(3)); }
+    else if (splitCIR.at(0).compare("SUB")  == 0) OpCodeRegister = SUB;
+    else if (splitCIR.at(0).compare("MUL")  == 0) OpCodeRegister = MUL;
+    else if (splitCIR.at(0).compare("DIV")  == 0) OpCodeRegister = DIV;
+    else if (splitCIR.at(0).compare("CMP")  == 0) OpCodeRegister = CMP;
 
-    else if (splitCIR.at(0).compare("LD")   == 0) opCodeRegister = LD;
-    else if (splitCIR.at(0).compare("LDI")  == 0) { opCodeRegister = LDI; IMMEDIATE = stoi(splitCIR.at(2)); }
-    else if (splitCIR.at(0).compare("LID")  == 0) opCodeRegister = LID;
-    else if (splitCIR.at(0).compare("LDA")  == 0) opCodeRegister = LDA;
+    else if (splitCIR.at(0).compare("LD")   == 0) OpCodeRegister = LD;
+    else if (splitCIR.at(0).compare("LDI")  == 0) { OpCodeRegister = LDI; IMMEDIATE = stoi(splitCIR.at(2)); }
+    else if (splitCIR.at(0).compare("LID")  == 0) OpCodeRegister = LID;
+    else if (splitCIR.at(0).compare("LDA")  == 0) OpCodeRegister = LDA;
     
-    else if (splitCIR.at(0).compare("STO")  == 0) opCodeRegister = STO;
-    else if (splitCIR.at(0).compare("STOI") == 0) { opCodeRegister = STOI; IMMEDIATE = stoi(splitCIR.at(1)); }
+    else if (splitCIR.at(0).compare("STO")  == 0) OpCodeRegister = STO;
+    else if (splitCIR.at(0).compare("STOI") == 0) { OpCodeRegister = STOI; IMMEDIATE = stoi(splitCIR.at(1)); }
 
-    else if (splitCIR.at(0).compare("AND")  == 0) opCodeRegister = AND;
-    else if (splitCIR.at(0).compare("OR")   == 0) opCodeRegister = OR;
-    else if (splitCIR.at(0).compare("NOT")  == 0) opCodeRegister = NOT;
-    else if (splitCIR.at(0).compare("LSHFT")== 0) opCodeRegister = LSHFT;
-    else if (splitCIR.at(0).compare("RSHFT")== 0) opCodeRegister = RSHFT;
+    else if (splitCIR.at(0).compare("AND")  == 0) OpCodeRegister = AND;
+    else if (splitCIR.at(0).compare("OR")   == 0) OpCodeRegister = OR;
+    else if (splitCIR.at(0).compare("NOT")  == 0) OpCodeRegister = NOT;
+    else if (splitCIR.at(0).compare("LSHFT")== 0) OpCodeRegister = LSHFT;
+    else if (splitCIR.at(0).compare("RSHFT")== 0) OpCodeRegister = RSHFT;
 
-    else if (splitCIR.at(0).compare("JMP")  == 0) opCodeRegister = JMP;
-    else if (splitCIR.at(0).compare("JMPI") == 0) opCodeRegister = JMPI;
-    else if (splitCIR.at(0).compare("BNE")  == 0) opCodeRegister = BNE;
-    else if (splitCIR.at(0).compare("BPO")  == 0) opCodeRegister = BPO;
-    else if (splitCIR.at(0).compare("BZ")   == 0) opCodeRegister = BZ;
+    else if (splitCIR.at(0).compare("JMP")  == 0) OpCodeRegister = JMP;
+    else if (splitCIR.at(0).compare("JMPI") == 0) OpCodeRegister = JMPI;
+    else if (splitCIR.at(0).compare("BNE")  == 0) OpCodeRegister = BNE;
+    else if (splitCIR.at(0).compare("BPO")  == 0) OpCodeRegister = BPO;
+    else if (splitCIR.at(0).compare("BZ")   == 0) OpCodeRegister = BZ;
 
-    else if (splitCIR.at(0).compare("HALT") == 0) opCodeRegister = HALT;
-    else if (splitCIR.at(0).compare("NOP")  == 0) opCodeRegister = NOP;
+    else if (splitCIR.at(0).compare("HALT") == 0) OpCodeRegister = HALT;
+    else if (splitCIR.at(0).compare("NOP")  == 0) OpCodeRegister = NOP;
     else throw std::invalid_argument("Unidentified Instruction: " + splitCIR.at(0));
 
     // Increment PC
@@ -234,59 +251,104 @@ void decode(){
 
 
 // Executes the current instruction
-void execute(){ 
-    switch (opCodeRegister){
-        case ADD:
-            registerFile[ALUD] = ALU0 + ALU1;
+void execute(){
+
+    // Passes the instruction destination register or address along
+    MEMD = ALUD; 
+
+    // Set flags to false
+    MEM_writeBackFlag = false;
+    memoryReadFlag = false;
+    memoryWriteFlag = false;
+
+    // Massivce switch/case for the OpCodeRegister
+    switch (OpCodeRegister){
+        case ADD:                   // #####################
+            ALU_OUT = ALU0 + ALU1;   
+
+            MEM_writeBackFlag = true;      
             break;
         case ADDI:
-            registerFile[ALUD] = ALU0 + IMMEDIATE;
+            ALU_OUT = ALU0 + IMMEDIATE;
+
+            MEM_writeBackFlag = true;
             break;
         case SUB:
-            registerFile[ALUD] = ALU0 - ALU1;
+            ALU_OUT = ALU0 - ALU1;
+
+            MEM_writeBackFlag = true;
             break;
         case MUL:
-            registerFile[ALUD] = ALU0 * ALU1;
+            ALU_OUT = ALU0 * ALU1;
+
+            MEM_writeBackFlag = true;
             break;
         case DIV:
-            registerFile[ALUD] = (int) ALU0 / ALU1;
+            ALU_OUT = (int) ALU0 / ALU1;
+
+            MEM_writeBackFlag = true;
             break;
         case CMP:
-            if      (ALU0 < ALU1) registerFile[ALUD] = -1;
-            else if (ALU0 > ALU1) registerFile[ALUD] =  1;
-            else                  registerFile[ALUD] =  0;
+            if      (ALU0 < ALU1) ALU_OUT = -1;
+            else if (ALU0 > ALU1) ALU_OUT =  1;
+            else                  ALU_OUT =  0;
+
+            MEM_writeBackFlag = true;
             break;
         case LD:
-            registerFile[ALUD] = dataMemory[ALU0];
-        case LDI:
-            registerFile[ALUD] = IMMEDIATE;
+            ALU_OUT = ALU0;
+
+            MEM_writeBackFlag = true;
+            memoryReadFlag = true;
+        case LDI:                   // #####################
+            ALU_OUT = IMMEDIATE;
+
+            MEM_writeBackFlag = true;
             break;
-        case LID:
+        /*case LID:                   // BROKEN ################################
             registerFile[ALUD] = dataMemory[dataMemory[ALU0]];
-            break;
+            break;*/
         case LDA:
-            registerFile[ALUD] = dataMemory[ALU0 + ALU1];
+            ALU_OUT = ALU0 + ALU1;
+
+            MEM_writeBackFlag = true;
+            memoryReadFlag = true;
             break;
         case STO:
-            dataMemory[ALUD] = ALU0;
+            ALU_OUT = ALU0;
+
+            memoryWriteFlag = true;
             break;
-        case STOI:
-            dataMemory[IMMEDIATE] = ALU0;
+        case STOI:                   // #####################
+            ALU_OUT = ALU0;
+            MEMD = IMMEDIATE;
+
+            memoryWriteFlag = true;
             break;
         case AND:
-            registerFile[ALUD] = ALU0 & ALU1;
+            ALU_OUT = ALU0 & ALU1;
+
+            MEM_writeBackFlag = true;
             break;
         case OR:
-            registerFile[ALUD] = ALU0 | ALU1;
+            ALU_OUT = ALU0 | ALU1;
+
+            MEM_writeBackFlag = true;
             break;
         case NOT:
-            registerFile[ALUD] = ~ALU0;
+            ALU_OUT = ~ALU0;
+
+            MEM_writeBackFlag = true;
             break;
         case LSHFT:
-            registerFile[ALUD] = ALU0 << ALU1;
+            ALU_OUT = ALU0 << ALU1;
+
+            MEM_writeBackFlag = true;
             break;
         case RSHFT:
-            registerFile[ALUD] = ALU0 >> ALU1;
+            ALU_OUT = ALU0 >> ALU1;
+
+            MEM_writeBackFlag = true;
             break;
         case JMP:
             break;
@@ -298,7 +360,7 @@ void execute(){
             break;
         case BZ:
             break;
-        case HALT:
+        case HALT:                   // #####################
             systemHaltFlag = true;
             break;
         case NOP:
@@ -314,14 +376,26 @@ void execute(){
 
 // Memory access part of the pipeline: LD and STO operations access the memory here. Branches set the PC here
 void memoryAccess(){
+
+    // Passes the instruction destination register or address along
+    WBD = MEMD; 
+
+    // We also need to pass along the writeBackFlag
+    writeBackFlag = MEM_writeBackFlag;
+
+    // Check if this instruction needs to access memory
+         if (memoryReadFlag == true)  MEM_OUT = dataMemory[ALU_OUT];
+    else if (memoryWriteFlag == true) dataMemory[MEMD] = ALU_OUT; 
+    else                      MEM_OUT = ALU_OUT;            // Not really needed, just ensures that all instrucitons have a regular 5-stage pipeline. HERE we could drop it down ot 4 to speed tings up but that might cause some issues with the line.
     
-     std::cout << "Memory Accessed... ";
+    std::cout << "Memory Accessed... ";
 }
 
-// Data written back into register file
+// Data written back into register file: Write backs don't occur on STO or HALT (or NOP)
 void writeBack(){
-
-     std::cout << "Written Back... " << std::endl;
+    std::cout << " " << WBD << " " << MEM_OUT << " ";
+    if (writeBackFlag) registerFile[WBD] = MEM_OUT;
+    std::cout << "Written Back... " << std::endl;
 }
 
 #pragma endregion F/D/E/M/W/
