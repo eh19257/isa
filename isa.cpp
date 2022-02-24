@@ -22,8 +22,12 @@ std::string CIR;            // Current Instruction Register
 int IMMEDIATE;              // Immediate register used for immediate addressing
     
 // ALU registers
-int  ALU0, ALU1; //ALU_OUT  // 2 input regsiters for the ALU
-Register ALUD;              // Destination register of the ALU
+Instruction opCodeRegister = NOP;       // Stores the decoded OpCode that was in the CIR
+int  ALU0, ALU1, ALU_OUT;               // 2 input regsiters for the ALU
+Register ALUD;                          // Destination register for the output of the ALU
+
+// Memory Related Registers
+Register MEMD;                          // Destination address for the position in memory (STO operation) or the register in the register file (LD operation)
 
 #pragma endregion Registers
 
@@ -50,13 +54,19 @@ enum Instruction {
     LSHFT,
     RSHFT,
 
+    JMP,
+    JMPI,
+    BNE,
+    BPO,
+    BZ,
+
     HALT,
     NOP
 };
 
 /* System Flags */
 bool systemHaltFlag = false;
-Instruction operationTypeFlag = NOP; 
+
 
 /* Memory */
 std::array<std::string, SIZE_OF_INSTRUCTION_MEMORY> instrMemory;
@@ -67,6 +77,8 @@ std::array<int, SIZE_OF_DATA_MEMORY> dataMemory;
 void fetch();
 void decode();  
 void execute();
+void memoryAccess();
+void writeBack();
 
 /* Non-ISA function headers */
 void loadProgramIntoMemory();
@@ -121,7 +133,7 @@ void printRegisterFile(int maxReg){
 
 #pragma endregion debugging
 
-#pragma region F/D/E/
+#pragma region F/D/E/M/W/
 
 // The main cycle of the processor
 void cycle(){
@@ -134,6 +146,8 @@ void cycle(){
         fetch();
         decode();
         execute();
+        memoryAccess();
+        writeBack();
 
         printRegisterFile(5);
 
@@ -181,29 +195,36 @@ void decode(){
         }
     }
     // if statement for decoding all instructions
-         if (splitCIR.at(0).compare("ADD")  == 0) operationTypeFlag = ADD;
-    else if (splitCIR.at(0).compare("ADDI") == 0) { operationTypeFlag = ADDI; IMMEDIATE = stoi(splitCIR.at(3)); }
-    else if (splitCIR.at(0).compare("SUB")  == 0) operationTypeFlag = SUB;
-    else if (splitCIR.at(0).compare("MUL")  == 0) operationTypeFlag = MUL;
-    else if (splitCIR.at(0).compare("DIV")  == 0) operationTypeFlag = DIV;
-    else if (splitCIR.at(0).compare("CMP")  == 0) operationTypeFlag = CMP;
+         if (splitCIR.at(0).compare("ADD")  == 0) opCodeRegister = ADD;
+    else if (splitCIR.at(0).compare("ADDI") == 0) { opCodeRegister = ADDI; IMMEDIATE = stoi(splitCIR.at(3)); }
+    else if (splitCIR.at(0).compare("SUB")  == 0) opCodeRegister = SUB;
+    else if (splitCIR.at(0).compare("MUL")  == 0) opCodeRegister = MUL;
+    else if (splitCIR.at(0).compare("DIV")  == 0) opCodeRegister = DIV;
+    else if (splitCIR.at(0).compare("CMP")  == 0) opCodeRegister = CMP;
 
-    else if (splitCIR.at(0).compare("LD")   == 0) operationTypeFlag = LD;
-    else if (splitCIR.at(0).compare("LDI")  == 0) { operationTypeFlag = LDI; IMMEDIATE = stoi(splitCIR.at(2)); }
-    else if (splitCIR.at(0).compare("LID")  == 0) operationTypeFlag = LID;
-    else if (splitCIR.at(0).compare("LDA")  == 0) operationTypeFlag = LDA;
+    else if (splitCIR.at(0).compare("LD")   == 0) opCodeRegister = LD;
+    else if (splitCIR.at(0).compare("LDI")  == 0) { opCodeRegister = LDI; IMMEDIATE = stoi(splitCIR.at(2)); }
+    else if (splitCIR.at(0).compare("LID")  == 0) opCodeRegister = LID;
+    else if (splitCIR.at(0).compare("LDA")  == 0) opCodeRegister = LDA;
     
-    else if (splitCIR.at(0).compare("STO") == 0) operationTypeFlag = STO;
-    else if (splitCIR.at(0).compare("STOI") == 0) { operationTypeFlag = STOI; IMMEDIATE = stoi(splitCIR.at(1)); }
+    else if (splitCIR.at(0).compare("STO")  == 0) opCodeRegister = STO;
+    else if (splitCIR.at(0).compare("STOI") == 0) { opCodeRegister = STOI; IMMEDIATE = stoi(splitCIR.at(1)); }
 
-    else if (splitCIR.at(0).compare("AND") == 0) operationTypeFlag = AND;
-    else if (splitCIR.at(0).compare("OR") == 0) operationTypeFlag = OR;
-    else if (splitCIR.at(0).compare("NOT") == 0) operationTypeFlag = NOT;
-    else if (splitCIR.at(0).compare("LSHFT") == 0) operationTypeFlag = LSHFT;
-    else if (splitCIR.at(0).compare("RSHFT") == 0) operationTypeFlag = RSHFT;
+    else if (splitCIR.at(0).compare("AND")  == 0) opCodeRegister = AND;
+    else if (splitCIR.at(0).compare("OR")   == 0) opCodeRegister = OR;
+    else if (splitCIR.at(0).compare("NOT")  == 0) opCodeRegister = NOT;
+    else if (splitCIR.at(0).compare("LSHFT")== 0) opCodeRegister = LSHFT;
+    else if (splitCIR.at(0).compare("RSHFT")== 0) opCodeRegister = RSHFT;
 
-    else if (splitCIR.at(0).compare("HALT") == 0) operationTypeFlag = HALT;
-    else if (splitCIR.at(0).compare("NOP")  == 0) operationTypeFlag = NOP;
+    else if (splitCIR.at(0).compare("JMP")  == 0) opCodeRegister = JMP;
+    else if (splitCIR.at(0).compare("JMPI") == 0) opCodeRegister = JMPI;
+    else if (splitCIR.at(0).compare("BNE")  == 0) opCodeRegister = BNE;
+    else if (splitCIR.at(0).compare("BPO")  == 0) opCodeRegister = BPO;
+    else if (splitCIR.at(0).compare("BZ")   == 0) opCodeRegister = BZ;
+
+    else if (splitCIR.at(0).compare("HALT") == 0) opCodeRegister = HALT;
+    else if (splitCIR.at(0).compare("NOP")  == 0) opCodeRegister = NOP;
+    else throw std::invalid_argument("Unidentified Instruction: " + splitCIR.at(0));
 
     // Increment PC
     PC++;
@@ -214,7 +235,7 @@ void decode(){
 
 // Executes the current instruction
 void execute(){ 
-    switch (operationTypeFlag){
+    switch (opCodeRegister){
         case ADD:
             registerFile[ALUD] = ALU0 + ALU1;
             break;
@@ -267,6 +288,16 @@ void execute(){
         case RSHFT:
             registerFile[ALUD] = ALU0 >> ALU1;
             break;
+        case JMP:
+            break;
+        case JMPI:
+            break;
+        case BNE:
+            break;
+        case BPO:
+            break;
+        case BZ:
+            break;
         case HALT:
             systemHaltFlag = true;
             break;
@@ -278,9 +309,22 @@ void execute(){
 
     }
 
-    std::cout << "Executed... " << std::endl;
+    std::cout << "Executed... ";
 }
-#pragma endregion F/D/E/
+
+// Memory access part of the pipeline: LD and STO operations access the memory here. Branches set the PC here
+void memoryAccess(){
+    
+     std::cout << "Memory Accessed... ";
+}
+
+// Data written back into register file
+void writeBack(){
+
+     std::cout << "Written Back... " << std::endl;
+}
+
+#pragma endregion F/D/E/M/W/
 
 
 #pragma region helperFunctions
@@ -340,13 +384,3 @@ int main(){
     std::cout << "Program has been halted\n" << std::endl;
     outputAllMemory(8);
 }
-
-
-
-
-/* TO DO
-
-To do:
--	Find a way to properly decode the instructions
--   Properly instantiate register file and instruction memory.
-*/
