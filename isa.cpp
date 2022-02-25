@@ -43,7 +43,8 @@ enum Instruction {
     BZ,
 
     HALT,
-    NOP
+    NOP,
+    MV
 };
 
 /* Registers */
@@ -160,6 +161,8 @@ void cycle(){
     int numOfCycles = 1;
     //registers[R0] = 123;
     while (!systemHaltFlag) {
+
+        if (numOfCycles == 26) outputAllMemory(amount_of_instruction_memory_to_output);
         std::cout << "---------- Cycle " << numOfCycles << " starting ----------"<< std::endl;
         std::cout << "PC has current value: " << PC << std::endl;
 
@@ -169,7 +172,7 @@ void cycle(){
         memoryAccess();
         writeBack();
 
-        printRegisterFile(11);
+        printRegisterFile(12);
 
         std::cout << "---------- Cycle " << numOfCycles << " completed. ----------\n"<< std::endl;
         numOfCycles++;
@@ -214,6 +217,7 @@ void decode(){
             }
         }
     }
+
     // if statement for decoding all instructions
          if (splitCIR.at(0).compare("ADD")  == 0) OpCodeRegister = ADD;
     else if (splitCIR.at(0).compare("ADDI") == 0) { OpCodeRegister = ADDI; IMMEDIATE = stoi(splitCIR.at(3)); }
@@ -245,6 +249,7 @@ void decode(){
 
     else if (splitCIR.at(0).compare("HALT") == 0) OpCodeRegister = HALT;
     else if (splitCIR.at(0).compare("NOP")  == 0) OpCodeRegister = NOP;
+    else if (splitCIR.at(0).compare("MV")   == 0) OpCodeRegister = MV;
     else throw std::invalid_argument("Unidentified Instruction: " + splitCIR.at(0));
 
     // Increment PC
@@ -301,17 +306,19 @@ void execute(){
             break;
         case LD:
             ALU_OUT = ALU0;
-
+            
             MEM_writeBackFlag = true;
             memoryReadFlag = true;
+            break;
         case LDD:
             ALU_OUT = IMMEDIATE;
-
+            
             MEM_writeBackFlag = true;
             memoryReadFlag = true;
+            break;
         case LDI:                   // #####################
             ALU_OUT = IMMEDIATE;
-
+            
             MEM_writeBackFlag = true;
             break;
         /*case LID:                   // BROKEN ################################
@@ -383,6 +390,11 @@ void execute(){
             break;
         case NOP:
             break;
+        case MV:
+            ALU_OUT = ALU0;
+            
+            MEM_writeBackFlag = true;
+            break;
         default:
             std::cout << "Instruction not understood!!" << std::endl;
             break;
@@ -402,7 +414,7 @@ void memoryAccess(){
     writeBackFlag = MEM_writeBackFlag;
 
     // Check if this instruction needs to access memory
-         if (memoryReadFlag == true)  MEM_OUT = dataMemory[ALU_OUT];
+         if (memoryReadFlag == true)  { MEM_OUT = dataMemory[ALU_OUT]; std::cout << "ALU_OUT: " << ALU_OUT << " dataMemory[ALU_OUT]: " << dataMemory[ALU_OUT] << " MEM_OUT: " << MEM_OUT << std::endl;}
     else if (memoryWriteFlag == true) dataMemory[MEMD] = ALU_OUT; 
     else                      MEM_OUT = ALU_OUT;            // Not really needed, just ensures that all instructions have a regular 5-stage pipeline. HERE we could drop it down ot 4 to speed tings up but that might cause some issues with the line.
     
@@ -411,6 +423,7 @@ void memoryAccess(){
 
 // Data written back into register file: Write backs don't occur on STO or HALT (or NOP)
 void writeBack(){
+
     if (writeBackFlag) registerFile[WBD] = MEM_OUT;
     std::cout << "Written Back... " << std::endl;
 }

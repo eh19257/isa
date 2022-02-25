@@ -51,6 +51,7 @@ The instruction set architecture will be a 3 operand architecture - this is done
 |             |                  |                                                                                          |                |             |
 | #           | HALT             | Ends the program                                                                         |                |             |
 | #           | NOP              | No operation                                                                             |                |             |
+|             | MV rd rs         | Moves the value in rs into rd                                                            |                |
 | NO          | RET              | Loads the return address into the PC so that a procedure can be returned                 |                |             |
 
 ## Example Programs

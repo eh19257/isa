@@ -1,0 +1,3 @@
+LDI r0 4
+MV r2 r0
+HALT
