@@ -1,0 +1,5 @@
+LDI r0 69
+STOI 0 r0
+LDD r1 0
+STOI 4 r1
+HALT

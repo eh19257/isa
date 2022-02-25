@@ -22,6 +22,7 @@ enum Instruction {
     CMP,
 
     LD,
+    LDD,
     LDI,
     LID,
     LDA,
@@ -168,7 +169,7 @@ void cycle(){
         memoryAccess();
         writeBack();
 
-        printRegisterFile(5);
+        printRegisterFile(11);
 
         std::cout << "---------- Cycle " << numOfCycles << " completed. ----------\n"<< std::endl;
         numOfCycles++;
@@ -222,6 +223,7 @@ void decode(){
     else if (splitCIR.at(0).compare("CMP")  == 0) OpCodeRegister = CMP;
 
     else if (splitCIR.at(0).compare("LD")   == 0) OpCodeRegister = LD;
+    else if (splitCIR.at(0).compare("LDD")  == 0) { OpCodeRegister = LDD; IMMEDIATE = stoi(splitCIR.at(2)); } 
     else if (splitCIR.at(0).compare("LDI")  == 0) { OpCodeRegister = LDI; IMMEDIATE = stoi(splitCIR.at(2)); }
     else if (splitCIR.at(0).compare("LID")  == 0) OpCodeRegister = LID;
     else if (splitCIR.at(0).compare("LDA")  == 0) OpCodeRegister = LDA;
@@ -302,6 +304,11 @@ void execute(){
 
             MEM_writeBackFlag = true;
             memoryReadFlag = true;
+        case LDD:
+            ALU_OUT = IMMEDIATE;
+
+            MEM_writeBackFlag = true;
+            memoryReadFlag = true;
         case LDI:                   // #####################
             ALU_OUT = IMMEDIATE;
 
@@ -330,7 +337,6 @@ void execute(){
             break;
         case AND:
             ALU_OUT = ALU0 & ALU1;
-            std::cout << "NUT NUT: " << ALU_OUT << std::endl;
 
             MEM_writeBackFlag = true;
             break;
@@ -398,7 +404,7 @@ void memoryAccess(){
     // Check if this instruction needs to access memory
          if (memoryReadFlag == true)  MEM_OUT = dataMemory[ALU_OUT];
     else if (memoryWriteFlag == true) dataMemory[MEMD] = ALU_OUT; 
-    else                      MEM_OUT = ALU_OUT;            // Not really needed, just ensures that all instrucitons have a regular 5-stage pipeline. HERE we could drop it down ot 4 to speed tings up but that might cause some issues with the line.
+    else                      MEM_OUT = ALU_OUT;            // Not really needed, just ensures that all instructions have a regular 5-stage pipeline. HERE we could drop it down ot 4 to speed tings up but that might cause some issues with the line.
     
     std::cout << "Memory Accessed... ";
 }
@@ -434,7 +440,7 @@ void loadProgramIntoMemory(std::string pathToProgram){
             break;
         }
         std::getline(program, line);
-        if (!line.substr(0, line.length() - 1).empty()) {
+        if (( !line.substr(0, line.length() - 1).empty() ) && ( line.substr(0,2).compare("//") != 0) ) {
             instrMemory.at(counter) = line.substr(0, line.length() - 1);
             counter++;
         }

@@ -26,7 +26,8 @@ The instruction set architecture will be a 3 operand architecture - this is done
 | #           | DIV rd rs1 rs2   | Integer divsion of rs1 by rs2 with the result stored in rd (rd = rs1 // rs2)             |                | Y           |
 | #           | CMP rd rs1 rs2   | Compares rs1 and rs2; if rs1 < rs2, rd = -1; if rs1 = rs2, rd = 0; if rs1 > rs2, rd = 1  |                | Y           |
 |             |                  |                                                                                          |                |             |
-| #           | LD rd rs         | Loads a value into rd from the address stored in rs                                      | Y              | Y           | Made redundent by LDA                                                                         |
+| X           | LD rd rs         | Loads a value into rd from the address stored in rs                                      | Y              | Y           | Made redundent by LDA                                                                         | WARNING BUGGY!!! |
+|             | LDD rd n         | Loads the value in the memory address pointed to by n                                    | Y              | Y           |
 | #           | LDI rd n         | Loads an immediate value n into the register rd                                          |                | Y           |
 | To Be Done  | LID rd rs        | Loads the value into rd from the address that is pointed to by the address in rd         | Y              | Y           | DOUBLE MEMORY ACCESS - currently not implemented                                              |
 | #           | LDA rd rs1 rs2   | Loads the value indexed rs2 addresses away from rs1 into rd                              | Y              | Y           |
@@ -34,7 +35,8 @@ The instruction set architecture will be a 3 operand architecture - this is done
 |             |                  |                                                                                          |                |             |
 | #           | STO rd rs        | Stores the value that is in rs into the memory address that is found in rd               | Y              |             | Currently accessing the registerFile - feels illegal that it's being done in EXE but not sure |
 | #           | STOI n rs        | Stores a value into an immediate address                                                 | Y              |             |
-|             |                  |                                                                                          |                |             |
+| To Be Done  | STOA rd rs1 rs2  | Store rs2 in the memory address rd + rs1                                                 |                |             | NOT YET IMPLEMENTED                                                                           |
+|             |                  |                                                                                          |                |
 | #           | AND rd rs1 rs2   | Bitwise logical and operation between rs1 and rs2 - result in rd                         |                | Y           |
 | #           | OR rd rs1 rs2    | Bitwise logical OR operation between rs1 and rs2, result stored in rd                    |                | Y           |
 | #           | NOT rd rs        | Bitwise logical NOT operation on rs, result stored in rd                                 |                | Y           |
@@ -51,8 +53,11 @@ The instruction set architecture will be a 3 operand architecture - this is done
 | #           | NOP              | No operation                                                                             |                |             |
 | NO          | RET              | Loads the return address into the PC so that a procedure can be returned                 |                |             |
 
----
+## Example Programs
+Currently only have one example program (vector addition) but have some tests too.
 
+# Everything below here is out of date/not complete!!!
+---
 ## Registers
 
 Registers for the ISA are defined below and are currently stored in seperate variables but will be stored as a single arrray which acts as register file:
