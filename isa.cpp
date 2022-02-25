@@ -10,6 +10,8 @@
 const int SIZE_OF_INSTRUCTION_MEMORY = 256;     // size of the read-only instruction memory
 const int SIZE_OF_DATA_MEMORY = 256;            // pretty much the heap and all
 
+int amount_of_instruction_memory_to_output = 8;  // default = 8
+
 /* Instructions */
 enum Instruction {
     ADD,
@@ -230,8 +232,8 @@ void decode(){
     else if (splitCIR.at(0).compare("AND")  == 0) OpCodeRegister = AND;
     else if (splitCIR.at(0).compare("OR")   == 0) OpCodeRegister = OR;
     else if (splitCIR.at(0).compare("NOT")  == 0) OpCodeRegister = NOT;
-    else if (splitCIR.at(0).compare("LSHFT")== 0) OpCodeRegister = LSHFT;
-    else if (splitCIR.at(0).compare("RSHFT")== 0) OpCodeRegister = RSHFT;
+    else if (splitCIR.at(0).compare("LSHFT")== 0) OpCodeRegister = LSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
+    else if (splitCIR.at(0).compare("RSHFT")== 0) OpCodeRegister = RSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
 
     else if (splitCIR.at(0).compare("JMP")  == 0) OpCodeRegister = JMP;
     else if (splitCIR.at(0).compare("JMPI") == 0) OpCodeRegister = JMPI;
@@ -316,6 +318,7 @@ void execute(){
             break;
         case STO:
             ALU_OUT = ALU0;
+            MEMD = registerFile[ALUD];       // register file access here might be invalid - ask Simon and see what he says
 
             memoryWriteFlag = true;
             break;
@@ -327,6 +330,7 @@ void execute(){
             break;
         case AND:
             ALU_OUT = ALU0 & ALU1;
+            std::cout << "NUT NUT: " << ALU_OUT << std::endl;
 
             MEM_writeBackFlag = true;
             break;
@@ -351,14 +355,22 @@ void execute(){
             MEM_writeBackFlag = true;
             break;
         case JMP:
+            PC = registerFile[ALUD];      // Again as in STO, is accessing the register file at this point illegal?
+
             break;
         case JMPI:
+            PC = PC + registerFile[ALUD]; // WARNING ERROR HERE
+
             break;
         case BNE:
+            if (ALU0 < 0) PC = registerFile[ALUD];
+
             break;
         case BPO:
+            if (ALU0 > 0) PC = registerFile[ALUD];
             break;
         case BZ:
+            if (ALU0 == 0) PC = registerFile[ALUD];
             break;
         case HALT:                   // #####################
             systemHaltFlag = true;
@@ -376,7 +388,7 @@ void execute(){
 
 // Memory access part of the pipeline: LD and STO operations access the memory here. Branches set the PC here
 void memoryAccess(){
-
+    // IF BRANCH RETURN
     // Passes the instruction destination register or address along
     WBD = MEMD; 
 
@@ -393,7 +405,6 @@ void memoryAccess(){
 
 // Data written back into register file: Write backs don't occur on STO or HALT (or NOP)
 void writeBack(){
-    std::cout << " " << WBD << " " << MEM_OUT << " ";
     if (writeBackFlag) registerFile[WBD] = MEM_OUT;
     std::cout << "Written Back... " << std::endl;
 }
@@ -423,9 +434,12 @@ void loadProgramIntoMemory(std::string pathToProgram){
             break;
         }
         std::getline(program, line);
-        instrMemory.at(counter) = line.substr(0, line.length() - 1);
-        counter++;
+        if (!line.substr(0, line.length() - 1).empty()) {
+            instrMemory.at(counter) = line.substr(0, line.length() - 1);
+            counter++;
+        }
     }
+    amount_of_instruction_memory_to_output = counter - 1;
 }
 
 // Splits a string by a delminiter and returns it as a std::vector<std::string>
@@ -451,10 +465,17 @@ std::vector<std::string> split(std::string str, char deliminator){
 
 
 
-int main(){
-    loadProgramIntoMemory("program");
-    outputAllMemory(8);
+int main(int argc, char** argv){
+    if (argc != 2) {
+        std::cout << "Usage: ./isa <program_name>" << std::endl;
+        return 0;
+    }
+
+    loadProgramIntoMemory(argv[1]);
+    outputAllMemory(amount_of_instruction_memory_to_output);
     cycle();
     std::cout << "Program has been halted\n" << std::endl;
-    outputAllMemory(8);
+    outputAllMemory(amount_of_instruction_memory_to_output);
+
+    return 0;
 }

@@ -1,0 +1,7 @@
+LDI r0 1
+LDI r1 69
+JMPI r0 
+STOI 0 r1
+STOI 1 r1
+NOP
+HALT

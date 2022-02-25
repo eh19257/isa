@@ -1,0 +1,7 @@
+LDI r0 4
+LDI r1 69
+JMP r0
+STOI 0 r1
+STOI 1 r1
+NOP
+HALT

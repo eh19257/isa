@@ -1,0 +1,5 @@
+LDI r0 6
+LDI r1 13
+OR r2 r0 r1
+STOI 0 r2
+HALT

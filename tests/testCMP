@@ -1,0 +1,10 @@
+LDI r0 1234
+STOI 2 r0
+LDI r0 5
+LDI r1 7
+CMP r2 r0 r1
+STOI 0 r2
+CMP r2 r1 r0
+STOI 1 r2
+CMP r2 r0 r0
+HALT

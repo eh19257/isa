@@ -1,0 +1,7 @@
+LDI r0 1
+LDI r1 4
+LSHFT r2 r0 r1 
+RSHFT r3 r1 r0
+STOI 0 r2
+STOI 1 r3
+HALT
