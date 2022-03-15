@@ -5,6 +5,14 @@
 #include <stdexcept>
 #include <vector>
 #include <iomanip>
+#include <algorithm>
+
+using namespace std;
+
+/* Debugging Flags */
+bool PRINT_REGISTERS_FLAG = false;
+bool PRINT_MEMORY_FLAG = false;
+bool PRINT_STATS_FLAG = false;
 
 /* Constants */
 const int SIZE_OF_INSTRUCTION_MEMORY = 256;     // size of the read-only instruction memory
@@ -97,11 +105,16 @@ void writeBack();
 void loadProgramIntoMemory();
 std::vector<std::string> split(std::string str, char deliminator);
 Register strToRegister(std::string str);
+bool handleProgramFlags(int count, char** arguments);
 
 /* Debugging function headers*/
 void outputAllMemory(int cutOff);
 void printRegisterFile(int maxReg);
+void outputStatistics(int numOfCycles);
 
+/* Stats variables */
+int numOfCycles = 1;        // Counts the number of cycles (stats at cycle 1 not cycle 0)
+int numOfBranches = 0;
 
 #pragma region debugging
 
@@ -152,17 +165,30 @@ void printRegisterFile(int maxReg){
     std::cout << "writeBackFlag: " << writeBackFlag << std::endl;
 }
 
+
+// Outputs all stats here
+void outputStatistics(int numOfCycles){
+    if (!PRINT_STATS_FLAG) return;
+
+    cout << "\n\n---------- STATISTICS ----------\n" << endl;
+    cout << "Total number of cycles:\t\t" << numOfCycles << endl;
+    cout << "Total number of branches:\t\t" << numOfBranches << endl;
+    cout << "Total number of successfully predicted branches:\t\t" << "Not implemented " << endl;
+    cout << "Percent of successfully predicted branches:\t\t" << "Not implemented " << endl;   
+}
+
 #pragma endregion debugging
 
 #pragma region F/D/E/M/W/
 
 // The main cycle of the processor
 void cycle(){
-    int numOfCycles = 1;
-    //registers[R0] = 123;
+    // Print memory before running the program
+    if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
+
     while (!systemHaltFlag) {
 
-        if (numOfCycles == 26) outputAllMemory(amount_of_instruction_memory_to_output);
+        //if (numOfCycles == 26) outputAllMemory(amount_of_instruction_memory_to_output);
         std::cout << "---------- Cycle " << numOfCycles << " starting ----------"<< std::endl;
         std::cout << "PC has current value: " << PC << std::endl;
 
@@ -172,11 +198,16 @@ void cycle(){
         memoryAccess();
         writeBack();
 
-        printRegisterFile(12);
+        if (PRINT_REGISTERS_FLAG) printRegisterFile(16);
 
         std::cout << "---------- Cycle " << numOfCycles << " completed. ----------\n"<< std::endl;
         numOfCycles++;
     }
+    std::cout << "Program has been halted\n" << std::endl;
+
+    // Print the memory after the program has been ran
+    if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
+    if (PRINT_STATS_FLAG) outputStatistics(numOfCycles);
 }
 
 
@@ -370,20 +401,27 @@ void execute(){
         case JMP:
             PC = registerFile[ALUD];      // Again as in STO, is accessing the register file at this point illegal?
 
+            /* STATS */ numOfBranches++;
             break;
         case JMPI:
             PC = PC + registerFile[ALUD]; // WARNING ERROR HERE
 
+            /* STATS */ numOfBranches++;
             break;
         case BNE:
             if (ALU0 < 0) PC = registerFile[ALUD];
 
+            /* STATS */ numOfBranches++;
             break;
         case BPO:
             if (ALU0 > 0) PC = registerFile[ALUD];
+
+            /* STATS */ numOfBranches++;
             break;
         case BZ:
             if (ALU0 == 0) PC = registerFile[ALUD];
+
+            /* STATS */ numOfBranches++;
             break;
         case HALT:                   // #####################
             systemHaltFlag = true;
@@ -414,7 +452,7 @@ void memoryAccess(){
     writeBackFlag = MEM_writeBackFlag;
 
     // Check if this instruction needs to access memory
-         if (memoryReadFlag == true)  { MEM_OUT = dataMemory[ALU_OUT]; std::cout << "ALU_OUT: " << ALU_OUT << " dataMemory[ALU_OUT]: " << dataMemory[ALU_OUT] << " MEM_OUT: " << MEM_OUT << std::endl;}
+         if (memoryReadFlag == true)  MEM_OUT = dataMemory[ALU_OUT];
     else if (memoryWriteFlag == true) dataMemory[MEMD] = ALU_OUT; 
     else                      MEM_OUT = ALU_OUT;            // Not really needed, just ensures that all instructions have a regular 5-stage pipeline. HERE we could drop it down ot 4 to speed tings up but that might cause some issues with the line.
     
@@ -461,6 +499,7 @@ void loadProgramIntoMemory(std::string pathToProgram){
     amount_of_instruction_memory_to_output = counter - 1;
 }
 
+
 // Splits a string by a delminiter and returns it as a std::vector<std::string>
 std::vector<std::string> split(std::string str, char deliminator){
         int oldIndex = 0;
@@ -480,21 +519,31 @@ std::vector<std::string> split(std::string str, char deliminator){
         return out;
 }
 
+
+// Returns true if the syntax was successfully handled
+bool handleProgramFlags(int c, char** arguments){
+    vector<string> args;
+    // Makes the arguments memory safe and easier to handle
+    for (int i = 0; i < c; i++){
+        args.push_back(string(arguments[i]));
+    }
+    if (count(args.begin(), args.end(), "-r") == 1 ) PRINT_REGISTERS_FLAG = true;
+    if (count(args.begin(), args.end(), "-m") == 1 ) PRINT_MEMORY_FLAG = true;
+    if (count(args.begin(), args.end(), "-s") == 1 ) PRINT_STATS_FLAG = true;
+
+    return true;
+}
+
 #pragma endregion helperFunctions
 
 
-
 int main(int argc, char** argv){
-    if (argc != 2) {
-        std::cout << "Usage: ./isa <program_name>" << std::endl;
+    if (!handleProgramFlags(argc, argv)) {
+        std::cout << "Usage: ./isa <program_name> -r|m" << std::endl;
         return 0;
     }
 
     loadProgramIntoMemory(argv[1]);
-    outputAllMemory(amount_of_instruction_memory_to_output);
     cycle();
-    std::cout << "Program has been halted\n" << std::endl;
-    outputAllMemory(amount_of_instruction_memory_to_output);
-
     return 0;
 }
