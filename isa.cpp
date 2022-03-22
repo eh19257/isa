@@ -8,6 +8,9 @@
 #include <algorithm>
 #include <thread>
 
+//#include "EnumsAndConstants.hpp"
+#include "units/ExecutionUnit.hpp"
+
 using namespace std;
 
 
@@ -16,72 +19,19 @@ bool PRINT_REGISTERS_FLAG = false;
 bool PRINT_MEMORY_FLAG = false;
 bool PRINT_STATS_FLAG = false;
 
-
-/* Constants */
-const int SIZE_OF_INSTRUCTION_MEMORY = 256;     // size of the read-only instruction memory
-const int SIZE_OF_DATA_MEMORY = 256;            // pretty much the heap and all
-
+/* Debugging constants */
 int amount_of_instruction_memory_to_output = 8;  // default = 8
 
 
-/* Instructions */
-enum Instruction {
-    ADD,
-    ADDI,
-    ADDF,
-    SUB,
-    SUBF,
-    MUL,
-    MULO,
-    MULFO,
-    DIV,
-    DIVF,
-    CMP,
+/* Pipeline Stage States */
 
-    LD,
-    LDD,
-    LDI,
-    LID,
-    LDA,
+StageState IF_State = Empty;
+StageState ID_State = Empty;
+StageState I_State = Empty;
+StageState EX_State = Empty;
+StageState WB_State = Empty;
 
-    STO,
-    STOI,
-
-    AND,
-    OR,
-    NOT,
-    LSHFT,
-    RSHFT,
-
-    JMP,
-    JMPI,
-    BNE,
-    BPO,
-    BZ,
-
-    HALT,
-    NOP,
-    MV,
-    MVHI,
-    MVLO,
-};
-
-
-/* Registers */
 #pragma region Registers
-enum Register { R0, R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13, R14, R15, X }; // X acts a dummy regsiter - doesn't exist but acts as a way to have uniform structure to all instructions that the ISA uses
-enum FP_Register {FP0, FP1, FP2, FP3};
-
-/* State */
-// Empty - nothing in the stage; Current - the stage is currently running; Next - the stage has completed and is ready to move to the next stage
-enum State {Empty, Current, Next};
-
-State IF_State = Empty;
-State ID_State = Empty;
-State EX_State = Empty;
-State MA_State = Empty;
-State WB_State = Empty;
-
 
 /* "Register File" - currently just a bunch of variables */
 std::array<int, 16> registerFile;    // All 16 general purpose registers
@@ -101,8 +51,8 @@ int ALUD;                               // Destination register for the output o
 
 
 // MEMORY ACCESS Registers
-int MEMD;                          // Destination address for the position in memory (STO operation) or the register in the register file (LD operation)
-int MEM_OUT;                            // Output of the memory (only used in load operations)
+//int MEMD;                          // Destination address for the position in memory (STO operation) or the register in the register file (LD operation)
+//int MEM_OUT;                            // Output of the memory (only used in load operations)
 
 
 // WRITE BACK registers
@@ -117,7 +67,7 @@ bool systemHaltFlag = false;            // If true, the system halts
 bool memoryReadFlag = false;            // Used pass on instruction information on whether an instruction is needed to READ from memory (used in the MEMORY ACCESS stage)
 bool memoryWriteFlag = false;           // Used pass on instruction information on whether an instruction is needed to WRITE to memory (used in the MEMORY ACCESS stage)
 
-bool MEM_writeBackFlag = false;
+//bool MEM_writeBackFlag = false;
 bool writeBackFlag = false;
 
 bool branchFlag = false;                // Used to tell the fetch stage that we have branched and so we do not need to increment at this point
@@ -131,8 +81,8 @@ std::array<int, SIZE_OF_DATA_MEMORY> dataMemory;
 /* ISA Function headers */
 void fetch();
 void decode();  
+void issue();
 void execute();
-void memoryAccess();
 void writeBack();
 
 /* ISA helpers */
@@ -152,8 +102,8 @@ void outputStatistics(int numOfCycles);
 /* Debugging/GUI for showing whch Instruction is in which stage */
 string IF_inst = "EMPTY";
 string ID_inst = "EMPTY";
+string I_inst = "EMPTY";
 string EX_inst = "EMPTY";
-string MA_inst = "EMPTY";
 string WB_inst = "EMPTY";
 
 
@@ -202,11 +152,11 @@ void printRegisterFile(int maxReg){
     std::cout << "ALU1: " << ALU1 << std::endl;
     std::cout << "ALU_OUT: " << ALU_OUT << std::endl;
     std::cout << "ALUD: " << ALUD << std::endl;
-    std::cout << "\nMEMD: " << MEMD << std::endl;
-    std::cout << "MEM_OUT: " << MEM_OUT << std::endl;
+    //std::cout << "\nMEMD: " << MEMD << std::endl;
+    //std::cout << "MEM_OUT: " << MEM_OUT << std::endl;
     std::cout << "memoryReadFlag: " << memoryReadFlag << std::endl;
     std::cout << "memoryWriteFlag: " << memoryWriteFlag << std::endl;
-    std::cout << "MEM_writeBackFlag: " <<MEM_writeBackFlag << std::endl;
+    //std::cout << "MEM_writeBackFlag: " <<MEM_writeBackFlag << std::endl;
     std::cout << "\nWBD: " << WBD << std::endl;
     std::cout << "writeBackFlag: " << writeBackFlag << std::endl;
 }
@@ -259,12 +209,13 @@ void cycle(){
         thread(writeBack);
     */
         // Pipelined
-        writeBack(); memoryAccess(); execute(); decode(); fetch();
+        writeBack(); execute(); issue(); decode(); fetch();
 
         cout << "\nCurrent instruction in the IF: " << IF_inst << endl;
         cout << "Current instruction in the ID: " << ID_inst << endl;
+        cout << "Current instruction in the IS: " << I_inst << endl;
         cout << "Current instruction in the EX: " << EX_inst << endl;
-        cout << "Current instruction in the MA: " << MA_inst << endl;
+        //cout << "Current instruction in the MA: " << MA_inst << endl;
         cout << "Current instruction in the WB: " << WB_inst << endl;
                 
 
@@ -323,6 +274,7 @@ void fetch(){
 void decode(){
     
     // State change for ID
+    #pragma region StageStates
     if (IF_State != Next) {
         // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
         ID_State = Empty;
@@ -340,6 +292,7 @@ void decode(){
         // Debugging/GUI to show the current instr in the processor
         ID_inst = IF_inst;
     }
+    #pragma endregion StageStates
 
     std::vector<std::string> splitCIR = split(CIR, ' '); // split the instruction based on ' ' and decode instruction like that
     
@@ -412,11 +365,47 @@ void decode(){
 }
 
 
+// Issues the current instruction to the correct execution unit
+void issue(){
+    // For time being this is only a single lane issue (non-superscaler)
+
+    #pragma region StageStates
+
+    // State change for IS
+    if (ID_State != Next) {
+        // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
+        I_State = Empty;
+
+        // Debugging/GUI to show that the current instruction is empty
+        I_inst = string("");
+
+        // increments stall count
+        numOfStalls += 1;
+        return;
+    } else {
+        // Else it can run
+        I_State = Current;
+
+        // Debugging/GUI to show the current instr in the processor
+        I_inst = ID_inst;
+    }
+    #pragma endregion StageStates
+
+    
+    //if ()
+
+
+    I_State = Next;
+}
+
+
+
 // Executes the current instruction
 void execute(){
 
+    #pragma region StageStates
     // Prepare state for EX
-    if (ID_State != Next) {
+    if (I_State != Next) {
         // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
         EX_State = Empty;
 
@@ -431,14 +420,15 @@ void execute(){
         EX_State = Current;
 
         // Debugging/GUI to show the current instr in the processor
-        EX_inst = ID_inst;
+        EX_inst = I_inst;
     }
+    #pragma endregion StageStates
 
     // Passes the instruction destination register or address along
-    MEMD = ALUD; 
+    WBD = ALUD; 
 
     // Set flags to false
-    MEM_writeBackFlag = false;
+    writeBackFlag= false;
     memoryReadFlag = false;
     memoryWriteFlag = false;
 
@@ -447,22 +437,22 @@ void execute(){
         case ADD:                   // #####################
             ALU_OUT = ALU0 + ALU1;   
 
-            MEM_writeBackFlag = true;      
+            writeBackFlag = true;      
             break;
         case ADDI:
             ALU_OUT = ALU0 + IMMEDIATE;
 
-            MEM_writeBackFlag = true;
+            writeBackFlag = true;
             break;
         case SUB:
             ALU_OUT = ALU0 - ALU1;
 
-            MEM_writeBackFlag = true;
+            writeBackFlag = true;
             break;
         case MUL:
             ALU_OUT = ALU0 * ALU1;
 
-            MEM_writeBackFlag = true;
+            writeBackFlag = true;
             break;
 
         /*case MULO:
@@ -476,7 +466,7 @@ void execute(){
         case DIV:
             ALU_OUT = (int) ALU0 / ALU1;
 
-            MEM_writeBackFlag = true;
+            writeBackFlag = true;
             break;
 
         case CMP:
@@ -484,24 +474,24 @@ void execute(){
             else if (ALU0 > ALU1) ALU_OUT =  1;
             else if (ALU0 == ALU1)ALU_OUT =  0;
             std::cout << "PAINFUL CMP" << endl;
-            MEM_writeBackFlag = true;
+            writeBackFlag = true;
             break;
         case LD:
             ALU_OUT = ALU0;
             
-            MEM_writeBackFlag = true;
+            writeBackFlag = true;
             memoryReadFlag = true;
             break;
         case LDD:
             ALU_OUT = IMMEDIATE;
             
-            MEM_writeBackFlag = true;
+            writeBackFlag = true;
             memoryReadFlag = true;
             break;
         case LDI:                   // #####################
             ALU_OUT = IMMEDIATE;
             
-            MEM_writeBackFlag = true;
+            writeBackFlag = true;
             break;
         /*case LID:                   // BROKEN ################################
             registerFile[ALUD] = dataMemory[dataMemory[ALU0]];
@@ -509,45 +499,45 @@ void execute(){
         case LDA:
             ALU_OUT = ALU0 + ALU1;
 
-            MEM_writeBackFlag = true;
+            writeBackFlag = true;
             memoryReadFlag = true;
             break;
         case STO:
             ALU_OUT = ALU0;
-            MEMD = registerFile[ALUD];       // register file access here might be invalid - ask Simon and see what he says
+            WBD = registerFile[ALUD];       // register file access here might be invalid - ask Simon and see what he says
 
             memoryWriteFlag = true;
             break;
         case STOI:                   // #####################
             ALU_OUT = ALU0;
-            MEMD = IMMEDIATE;
+            WBD = IMMEDIATE;
 
             memoryWriteFlag = true;
             break;
         case AND:
             ALU_OUT = ALU0 & ALU1;
 
-            MEM_writeBackFlag = true;
+            writeBackFlag = true;
             break;
         case OR:
             ALU_OUT = ALU0 | ALU1;
 
-            MEM_writeBackFlag = true;
+            writeBackFlag = true;
             break;
         case NOT:
             ALU_OUT = ~ALU0;
 
-            MEM_writeBackFlag = true;
+            writeBackFlag = true;
             break;
         case LSHFT:
             ALU_OUT = ALU0 << ALU1;
 
-            MEM_writeBackFlag = true;
+            writeBackFlag = true;
             break;
         case RSHFT:
             ALU_OUT = ALU0 >> ALU1;
 
-            MEM_writeBackFlag = true;
+            writeBackFlag = true;
             break;
         case JMP:
             PC = registerFile[ALUD];      // Again as in STO, is accessing the register file at this point illegal?
@@ -603,21 +593,21 @@ void execute(){
         case MV:
             ALU_OUT = ALU0;
             
-            MEM_writeBackFlag = true;
+            writeBackFlag = true;
             break;
 
         case MVHI:
             ALU_OUT = HI;
-            MEMD = ALUD;
+            WBD = ALUD;
 
-            MEM_writeBackFlag = true;
+            writeBackFlag = true;
             break;
 
         case MVLO:
             ALU_OUT = LO;
-            MEMD = ALUD;
+            WBD = ALUD;
 
-            MEM_writeBackFlag = true;
+            writeBackFlag = true;
             break;
         default:
             std::cout << "Instruction not understood!!" << std::endl;
@@ -629,7 +619,7 @@ void execute(){
 
     EX_State = Next;
 }
-
+/*
 // Memory access part of the pipeline: LD and STO operations access the memory here. Branches set the PC here
 void memoryAccess(){
 
@@ -667,12 +657,14 @@ void memoryAccess(){
     //std::cout << "Memory Accessed... ";
     MA_State = Next;
 }
+*/
 
 // Data written back into register file: Write backs don't occur on STO or HALT (or NOP)
 void writeBack(){
 
+    #pragma region StageStates
     // Prepare State for WB
-    if (MA_State != Next) {
+    if (EX_State != Next) {
         // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
         WB_State = Empty;
 
@@ -687,10 +679,11 @@ void writeBack(){
         WB_State = Current;
 
         // Debugging/GUI to show the current instr in the processor
-        WB_inst = MA_inst;
+        WB_inst = EX_inst;
     }
+    #pragma endregion StageStates
 
-    if (writeBackFlag) registerFile[WBD] = MEM_OUT;
+    if (writeBackFlag) registerFile[WBD] = ALU_OUT;
     //std::cout << "Written Back... " << std::endl;
 }
 
@@ -765,14 +758,15 @@ bool handleProgramFlags(int c, char** arguments){
 #pragma endregion helperFunctions
 
 
-int main(int argc, char** argv){
+int main(int argc, char** argv){    
     if (!handleProgramFlags(argc, argv)) {
         std::cout << "Usage: ./isa <program_name> -r|m" << std::endl;
         return 0;
     }
 
-    loadProgramIntoMemory(argv[1]);
-    cycle();
+    ALU foo = ALU();
+    //loadProgramIntoMemory(argv[1]);
+    //cycle();
 
     return 0;
 }
