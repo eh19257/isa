@@ -120,6 +120,8 @@ bool memoryWriteFlag = false;           // Used pass on instruction information 
 bool MEM_writeBackFlag = false;
 bool writeBackFlag = false;
 
+bool branchFlag = false;                // Used to tell the fetch stage that we have branched and so we do not need to increment at this point
+
 
 /* Memory */
 std::array<std::string, SIZE_OF_INSTRUCTION_MEMORY> instrMemory;
@@ -287,6 +289,13 @@ void fetch(){
     // Load the memory address that is in the instruction memory address that is pointed to by the PC
     CIR = instrMemory.at(PC);
 
+    // Increment PC or don't (depending on whether we are on a branch or not)
+    if (branchFlag){
+        branchFlag = false;
+    } else {
+        PC++;
+    }
+
     // Debugging/GUI to show the current instr in the processor
     IF_inst = CIR;
 
@@ -295,6 +304,7 @@ void fetch(){
         return;
     }
 
+    // INCORRECT \/\/
     /* We DO NOT UPDATE the PC here but instead we do it in the DECODE stage as this will help with pipelining branches later on */
     // Instead of incrementing the PC here we could use a NPC which is used by MIPS and stores the next sequential PC
     // Increment PC
@@ -395,9 +405,6 @@ void decode(){
     else if (splitCIR.at(0).compare("MVLO") == 0) OpCodeRegister = MVLO;
 
     else throw std::invalid_argument("Unidentified Instruction: " + splitCIR.at(0));
-
-    // Increment PC
-    PC++;
 
     //std::cout << "Decoded... ";
 
@@ -545,18 +552,25 @@ void execute(){
         case JMP:
             PC = registerFile[ALUD];      // Again as in STO, is accessing the register file at this point illegal?
 
+            branchFlag = true;
+
             /* STATS */ numOfBranches++;
             cout << "BRANCH" << endl;
             break;
         case JMPI:
             PC = PC + registerFile[ALUD]; // WARNING ERROR HERE
 
+            branchFlag = true;
+            
             /* STATS */ numOfBranches++;
             cout << "BRANCH" << endl;
             break;
         case BNE:
             if (ALU0 < 0) {
                 PC = registerFile[ALUD];
+                
+                branchFlag = true;
+
                 /* STATS */ numOfBranches++;
                 cout << "BRANCH" << endl;
             }
@@ -564,6 +578,9 @@ void execute(){
         case BPO:
             if (ALU0 > 0) {
                 PC = registerFile[ALUD];
+                
+                branchFlag = true;
+
                 /* STATS */ numOfBranches++;
                 cout << "BRANCH" << endl;
             }
@@ -571,6 +588,9 @@ void execute(){
         case BZ:
             if (ALU0 == 0) {
                 PC = registerFile[ALUD];
+                
+                branchFlag = true;
+
                 /* STATS */ numOfBranches++;
                 cout << "BRANCH" << endl; 
             }
