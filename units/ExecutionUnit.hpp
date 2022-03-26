@@ -14,9 +14,9 @@ class ExecutionUnit{
         state = READY;
     }
 
-    void multiplexer(){
+    /*void multiplexer(){
         return;
-    }
+    }*/
 
     // Every component must be able to cycle
     void cycle(){
@@ -128,56 +128,61 @@ class ALU : public ExecutionUnit{
 class BU : public ExecutionUnit{
 
     public:
+        int BUD;            // Destination address for the jump
+        int BU0;            // Input for the BU
+
+        bool BranchFlag = false;    // True is there is going to be a branch - default = no branch
+
 
     void cycle(){
         switch(OpCodeRegister){
             case JMP:
-            PC = registerFile[ALUD];      // Again as in STO, is accessing the register file at this point illegal?
+            PC = registerFile[BUD];      // Again as in STO, is accessing the register file at this point illegal?
 
             branchFlag = true;
 
-            /* STATS */ numOfBranches++;
+            ///* STATS */ numOfBranches++;
             cout << "BRANCH" << endl;
             break;
 
         case JMPI:
-            PC = PC + registerFile[ALUD]; // WARNING ERROR HERE
+            PC = PC + registerFile[BUD]; // WARNING ERROR HERE
 
             branchFlag = true;
             
-            /* STATS */ numOfBranches++;
+            ///* STATS */ numOfBranches++;
             cout << "BRANCH" << endl;
             break;
 
         case BNE:
-            if (ALU0 < 0) {
-                PC = registerFile[ALUD];
+            if (BU0 < 0) {
+                PC = registerFile[BUD];
                 
                 branchFlag = true;
 
-                /* STATS */ numOfBranches++;
+                ///* STATS */ numOfBranches++;
                 cout << "BRANCH" << endl;
             }
             break;
 
         case BPO:
-            if (ALU0 > 0) {
-                PC = registerFile[ALUD];
+            if (BU0 > 0) {
+                PC = registerFile[BUD];
                 
                 branchFlag = true;
 
-                /* STATS */ numOfBranches++;
+                ///* STATS */ numOfBranches++;
                 cout << "BRANCH" << endl;
             }
             break;
 
         case BZ:
-            if (ALU0 == 0) {
-                PC = registerFile[ALUD];
+            if (BU0 == 0) {
+                PC = registerFile[BUD];
                 
                 branchFlag = true;
 
-                /* STATS */ numOfBranches++;
+                ///* STATS */ numOfBranches++;
                 cout << "BRANCH" << endl; 
             }
             break;
@@ -192,7 +197,13 @@ class BU : public ExecutionUnit{
 
 // Implementation for a load/store unit (LSU)
 class LSU : public ExecutionUnit{
+    
     public:
+        int LSU0;
+        int LSU1;
+        int LSUD;
+        
+        int LSU_OUT;
 
     void cycle(){
         switch(OpCodeRegister){
