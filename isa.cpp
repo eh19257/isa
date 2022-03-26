@@ -8,6 +8,9 @@
 #include <algorithm>
 #include <thread>
 
+//#include "EnumsAndConstants.hpp"
+#include "ExecutionUnits.hpp"
+
 using namespace std;
 
 
@@ -17,71 +20,19 @@ bool PRINT_MEMORY_FLAG = false;
 bool PRINT_STATS_FLAG = false;
 
 
-/* Constants */
-const int SIZE_OF_INSTRUCTION_MEMORY = 256;     // size of the read-only instruction memory
-const int SIZE_OF_DATA_MEMORY = 256;            // pretty much the heap and all
-
 int amount_of_instruction_memory_to_output = 8;  // default = 8
 
-
-/* Instructions */
-enum Instruction {
-    ADD,
-    ADDI,
-    ADDF,
-    SUB,
-    SUBF,
-    MUL,
-    MULO,
-    MULFO,
-    DIV,
-    DIVF,
-    CMP,
-
-    LD,
-    LDD,
-    LDI,
-    LID,
-    LDA,
-
-    STO,
-    STOI,
-
-    AND,
-    OR,
-    NOT,
-    LSHFT,
-    RSHFT,
-
-    JMP,
-    JMPI,
-    BNE,
-    BPO,
-    BZ,
-
-    HALT,
-    NOP,
-    MV,
-    MVHI,
-    MVLO,
-};
+/* States */
+StageState IF_State = Empty;
+StageState ID_State = Empty;
+StageState I_State = Empty;
+StageState EX_State = Empty;
+StageState MA_State = Empty;
+StageState WB_State = Empty;
 
 
 /* Registers */
 #pragma region Registers
-enum Register { R0, R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13, R14, R15, X }; // X acts a dummy regsiter - doesn't exist but acts as a way to have uniform structure to all instructions that the ISA uses
-enum FP_Register {FP0, FP1, FP2, FP3};
-
-/* State */
-// Empty - nothing in the stage; Current - the stage is currently running; Next - the stage has completed and is ready to move to the next stage
-enum State {Empty, Current, Next};
-
-State IF_State = Empty;
-State ID_State = Empty;
-State EX_State = Empty;
-State MA_State = Empty;
-State WB_State = Empty;
-
 
 /* "Register File" - currently just a bunch of variables */
 std::array<int, 16> registerFile;    // All 16 general purpose registers
@@ -127,6 +78,9 @@ bool branchFlag = false;                // Used to tell the fetch stage that we 
 std::array<std::string, SIZE_OF_INSTRUCTION_MEMORY> instrMemory;
 std::array<int, SIZE_OF_DATA_MEMORY> dataMemory;
 
+/* Execution Units*/
+std::array<ExecutionUnit, 4> EUs = {ALU(), ALU(), BU(), LSU()};
+
 
 /* ISA Function headers */
 void fetch();
@@ -152,6 +106,7 @@ void outputStatistics(int numOfCycles);
 /* Debugging/GUI for showing whch Instruction is in which stage */
 string IF_inst = "EMPTY";
 string ID_inst = "EMPTY";
+string I_inst = "EMPTY";
 string EX_inst = "EMPTY";
 string MA_inst = "EMPTY";
 string WB_inst = "EMPTY";
@@ -442,6 +397,31 @@ void execute(){
     memoryReadFlag = false;
     memoryWriteFlag = false;
 
+
+    // Run all EUs
+    for (int i = 0; i < EUs.size(); i++ ){
+        // If the EU is ready to run or is currently in the process of carrying out an operation, then we run it - else we don't
+        if ( (EUs[i].state == READY) || (EUs[i].state == RUNNING) ) EUs[i].cycle();
+    }
+
+    for (int i = 0; i < EUs.size(); i++){
+        if (EUs[i].state == DONE) {
+
+            // BIG conditional block to work out what to do with EUs output
+            if      (EUs[i].typeOfEU == "ALU"){
+                ALU_OUT = (ALU) EUs[i].ALU_OUT;
+            }
+            else if (EUs[i].typeOfEU == "LSU"){
+
+            }
+            else if (EUs[i].typeOfEU == "BU"){
+
+            }
+        }
+    }
+
+    #pragma region OldEXSystem
+    /*
     // Massivce switch/case for the OpCodeRegister
     switch (OpCodeRegister){
         case ADD:                   // #####################
@@ -465,13 +445,13 @@ void execute(){
             MEM_writeBackFlag = true;
             break;
 
-        /*case MULO:
+        //case MULO:
             long int tempResult = (long int) ALU0 * (long int) ALU1;    // Not a register, only used to simulate a multiplication w/ overflow
             long int HImask = (long int) (pow(2, 32) - 1) << 32;        // Again, not a register, only used to simulated multiplication w/ overflow
 
             HI = (int) ( (tempResult & HImask) >> 32);
             LO = (int) tempResult;
-            break;*/
+            break;
 
         case DIV:
             ALU_OUT = (int) ALU0 / ALU1;
@@ -503,9 +483,9 @@ void execute(){
             
             MEM_writeBackFlag = true;
             break;
-        /*case LID:                   // BROKEN ################################
+        //case LID:                   // BROKEN ################################
             registerFile[ALUD] = dataMemory[dataMemory[ALU0]];
-            break;*/
+            break;
         case LDA:
             ALU_OUT = ALU0 + ALU1;
 
@@ -554,7 +534,7 @@ void execute(){
 
             branchFlag = true;
 
-            /* STATS */ numOfBranches++;
+            /* STATS numOfBranches++;
             cout << "BRANCH" << endl;
             break;
         case JMPI:
@@ -562,7 +542,7 @@ void execute(){
 
             branchFlag = true;
             
-            /* STATS */ numOfBranches++;
+            /* STATS numOfBranches++;
             cout << "BRANCH" << endl;
             break;
         case BNE:
@@ -571,7 +551,7 @@ void execute(){
                 
                 branchFlag = true;
 
-                /* STATS */ numOfBranches++;
+                /* STATS  numOfBranches++;
                 cout << "BRANCH" << endl;
             }
             break;
@@ -581,7 +561,7 @@ void execute(){
                 
                 branchFlag = true;
 
-                /* STATS */ numOfBranches++;
+                /* STATS  numOfBranches++;
                 cout << "BRANCH" << endl;
             }
             break;
@@ -591,7 +571,7 @@ void execute(){
                 
                 branchFlag = true;
 
-                /* STATS */ numOfBranches++;
+                /* STATS  numOfBranches++;
                 cout << "BRANCH" << endl; 
             }
             break;
@@ -622,8 +602,11 @@ void execute(){
         default:
             std::cout << "Instruction not understood!!" << std::endl;
             break;
+        
 
     }
+    */
+    #pragma endregion OldEXSystem
 
     //std::cout << "Executed... ";
 
