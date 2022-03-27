@@ -27,6 +27,7 @@ StageState IF_State = Empty;
 StageState ID_State = Empty;
 StageState I_State = Empty;
 StageState EX_State = Empty;
+StageState C_State = Empty;
 StageState MA_State = Empty;
 StageState WB_State = Empty;
 
@@ -39,17 +40,23 @@ std::array<int, 16> registerFile;    // All 16 general purpose registers
 std::array<float, 4> floatingPointRegisterFile;
 
 int PC;                     // Program Counter
+
+// IF/ID registers
 std::string CIR;            // Current Instruction Register
 int IMMEDIATE;              // Immediate register used for immediate addressing
-    
 
-// ALU registers
+
+// ID/I registers
 Instruction OpCodeRegister = NOP;       // Stores the decoded OpCode that was in the CIR
 int  ALU0, ALU1, ALU_OUT;               // 2 input regsiters for the ALU
-float ALU_FP0, ALU_FP1;                 // 2 input registers for the ALU where FP calculations are occuring
+//float ALU_FP0, ALU_FP1;                 // 2 input registers for the ALU where FP calculations are occuring
 int HI, LO;                             // High and Low parts of integer multiplication
 int ALUD;                               // Destination register for the output of the ALU
 
+// I/EX registes
+//Instruction I_EX__OpCodeRegister = NOP;
+
+// 
 
 // MEMORY ACCESS Registers
 int MEMD;                          // Destination address for the position in memory (STO operation) or the register in the register file (LD operation)
@@ -85,6 +92,7 @@ std::array<ExecutionUnit, 4> EUs = {ALU(), ALU(), BU(), LSU()};
 /* ISA Function headers */
 void fetch();
 void decode();  
+void issue();
 void execute();
 void memoryAccess();
 void writeBack();
@@ -108,6 +116,7 @@ string IF_inst = "EMPTY";
 string ID_inst = "EMPTY";
 string I_inst = "EMPTY";
 string EX_inst = "EMPTY";
+string C_inst = "EMPTY";
 string MA_inst = "EMPTY";
 string WB_inst = "EMPTY";
 
@@ -214,7 +223,7 @@ void cycle(){
         thread(writeBack);
     */
         // Pipelined
-        writeBack(); memoryAccess(); execute(); decode(); fetch();
+        writeBack(); memoryAccess(); execute(); issue(); decode(); fetch();
 
         cout << "\nCurrent instruction in the IF: " << IF_inst << endl;
         cout << "Current instruction in the ID: " << ID_inst << endl;
@@ -276,7 +285,7 @@ void fetch(){
 // Takes current instruction that is being used and decodes it so that it can be understood by the computer (not a massively important part)
 // Updates PC
 void decode(){
-    
+    #pragma region State Setup
     // State change for ID
     if (IF_State != Next) {
         // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
@@ -295,6 +304,7 @@ void decode(){
         // Debugging/GUI to show the current instr in the processor
         ID_inst = IF_inst;
     }
+    #pragma endregion State Setup
 
     std::vector<std::string> splitCIR = split(CIR, ' '); // split the instruction based on ' ' and decode instruction like that
     
@@ -305,15 +315,15 @@ void decode(){
     if (splitCIR.size() > 1) {
         // Get set first/destination register
         if      (splitCIR.at(1).substr(0 ,1).compare("r")  == 0 ) ALUD = strToRegister(splitCIR.at(1));
-        else if (splitCIR.at(1).substr(0, 2).compare("FP") == 0)  ALUD = (FP_Register) stoi(splitCIR.at(1).substr(1, splitCIR.at(1).length()));
+        //else if (splitCIR.at(1).substr(0, 2).compare("FP") == 0)  ALUD = (FP_Register) stoi(splitCIR.at(1).substr(1, splitCIR.at(1).length()));
 
         if (splitCIR.size() > 2) {
             if      (splitCIR.at(2).substr(0, 1).compare("r")  == 0 ) ALU0 = registerFile.at(strToRegister(splitCIR.at(2)));
-            else if (splitCIR.at(2).substr(0, 2).compare("FP") == 0)  ALU_FP0 = (FP_Register) stoi(splitCIR.at(2).substr(1, splitCIR.at(2).length()));
+            //else if (splitCIR.at(2).substr(0, 2).compare("FP") == 0)  ALU_FP0 = (FP_Register) stoi(splitCIR.at(2).substr(1, splitCIR.at(2).length()));
             
             if (splitCIR.size() > 3) {
                 if      (splitCIR.at(3).substr(0,1).compare("r")  == 0 ) ALU1 = registerFile.at(strToRegister(splitCIR.at(3)));
-                else if (splitCIR.at(3).substr(0,1).compare("FP") == 0 ) ALU_FP1 = (FP_Register) stoi(splitCIR.at(3).substr(1, splitCIR.at(3).length()));
+                //else if (splitCIR.at(3).substr(0,1).compare("FP") == 0 ) ALU_FP1 = (FP_Register) stoi(splitCIR.at(3).substr(1, splitCIR.at(3).length()));
 
             }
         }
@@ -367,9 +377,50 @@ void decode(){
 }
 
 
+// Issues the current instruction to it's repsective EU
+void issue(){
+    #pragma region State Setup
+    // State change for I
+    if (ID_State != Next) {
+        // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
+        I_State = Empty;
+
+        // Debugging/GUI to show that the current instruction is empty
+        I_inst = string("");
+
+        // increments stall count
+        numOfStalls += 1;
+        return;
+    } else {
+        // Else it can run
+        I_State = Current;
+
+        // Debugging/GUI to show the current instr in the processor
+        I_inst = ID_inst;
+    }
+    #pragma endregion State Setup
+
+    // LOGIC
+    int EUIndex = 0;
+    if      (OpCodeRegister >= ADD && OpCodeRegister <= CMP)   EUIndex = 0;
+    else if (OpCodeRegister >= AND && OpCodeRegister <= RSHFT) EUIndex = 1;
+    else if (OpCodeRegister >= JMP && OpCodeRegister <= BZ)    EUIndex = 2;
+    else if (OpCodeRegister >= LD && OpCodeRegister <= STOI)   EUIndex = 3;
+    else if (OpCodeRegister >= HALT && OpCodeRegister <= MVLO) EUIndex = 4;
+
+    // Load into the correct EU
+    EUs.at(EUIndex).OpCodeRegister = OpCodeRegister;
+    EUs.at(EUIndex).IN0 = ALU0;
+    EUs.at(EUIndex).IN1 = ALU1;
+    EUs.at(EUIndex).IMMEDIATE = IMMEDIATE;
+    EUs.at(EUIndex).state = READY;
+    
+    I_State = Next;
+}
+
 // Executes the current instruction
 void execute(){
-
+    #pragma region State Setup
     // Prepare state for EX
     if (ID_State != Next) {
         // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
@@ -388,6 +439,7 @@ void execute(){
         // Debugging/GUI to show the current instr in the processor
         EX_inst = ID_inst;
     }
+    #pragma endregion State Setup
 
     // Passes the instruction destination register or address along
     MEMD = ALUD; 
@@ -404,12 +456,13 @@ void execute(){
         if ( (EUs[i].state == READY) || (EUs[i].state == RUNNING) ) EUs[i].cycle();
     }
 
+    /*
     for (int i = 0; i < EUs.size(); i++){
         if (EUs[i].state == DONE) {
 
             // BIG conditional block to work out what to do with EUs output
             if      (EUs[i].typeOfEU == "ALU"){
-                ALU_OUT = (ALU) EUs[i].ALU_OUT;
+                //ALU_OUT = (ALU) EUs[i].ALU_OUT;
             }
             else if (EUs[i].typeOfEU == "LSU"){
 
@@ -419,6 +472,7 @@ void execute(){
             }
         }
     }
+    */
 
     #pragma region OldEXSystem
     /*
@@ -613,9 +667,39 @@ void execute(){
     EX_State = Next;
 }
 
+// Multiplexes the output of the EUs into a single line that the can then be written back
+void complete(){
+    #pragma region State Setup
+    // Prepare state for EX
+    if (EX_State != Next) {
+        // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
+        C_State = Empty;
+
+        // Debugging/GUI to show that the current instruction is empty
+        C_inst = string("");
+
+        // increments stall count
+        numOfStalls += 1;
+        return;
+    } else {
+        // Else it can run
+        C_State = Current;
+
+        // Debugging/GUI to show the current instr in the processor
+        C_inst = EX_inst;
+    }
+    #pragma endregion State Setup
+
+
+    //if (0)
+
+
+    C_State = Next;
+}
+
 // Memory access part of the pipeline: LD and STO operations access the memory here. Branches set the PC here
 void memoryAccess(){
-
+    #pragma region State Setup
     // Prepare State for MA
     if (EX_State != Next) {
         // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
@@ -634,6 +718,7 @@ void memoryAccess(){
         // Debugging/GUI to show the current instr in the processor
         MA_inst = EX_inst;
     }
+    #pragma endregion State Setup
 
     // IF BRANCH RETURN
     // Passes the instruction destination register or address along
@@ -653,7 +738,7 @@ void memoryAccess(){
 
 // Data written back into register file: Write backs don't occur on STO or HALT (or NOP)
 void writeBack(){
-
+    #pragma region State Setup
     // Prepare State for WB
     if (MA_State != Next) {
         // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
@@ -672,6 +757,7 @@ void writeBack(){
         // Debugging/GUI to show the current instr in the processor
         WB_inst = MA_inst;
     }
+    #pragma endregion State Setup
 
     if (writeBackFlag) registerFile[WBD] = MEM_OUT;
     //std::cout << "Written Back... " << std::endl;
