@@ -53,10 +53,14 @@ int  ALU0, ALU1, ALU_OUT;               // 2 input regsiters for the ALU
 int HI, LO;                             // High and Low parts of integer multiplication
 int ALUD;                               // Destination register for the output of the ALU
 
-// I/EX registes
+// I/EX registers
 //Instruction I_EX__OpCodeRegister = NOP;
 
-// 
+// EX/C registers
+int CD;
+
+// C/WB registers
+int C_OUT;
 
 // MEMORY ACCESS Registers
 int MEMD;                          // Destination address for the position in memory (STO operation) or the register in the register file (LD operation)
@@ -86,7 +90,11 @@ std::array<std::string, SIZE_OF_INSTRUCTION_MEMORY> instrMemory;
 std::array<int, SIZE_OF_DATA_MEMORY> dataMemory;
 
 /* Execution Units*/
-std::array<ExecutionUnit, 4> EUs = {ALU(), ALU(), BU(), LSU()};
+//std::array<ExecutionUnit, 4> EUs = {ALU(), ALU(), BU(), LSU()};
+std::array<ALU, 2> ALUs = {ALU(), ALU()};
+std::array<BU, 1> BUs = {BU()};
+std::array<LSU, 1> LSUs = {LSU(&dataMemory)};
+//std::array<MISC, 1> MISCs = {MISC()};
 
 
 /* ISA Function headers */
@@ -223,12 +231,14 @@ void cycle(){
         thread(writeBack);
     */
         // Pipelined
-        writeBack(); memoryAccess(); execute(); issue(); decode(); fetch();
+        writeBack(); /*memoryAccess();*/ complete(); execute(); issue(); decode(); fetch();
 
         cout << "\nCurrent instruction in the IF: " << IF_inst << endl;
         cout << "Current instruction in the ID: " << ID_inst << endl;
+        cout << "Current instruction in the I:  " << I_inst << endl;
         cout << "Current instruction in the EX: " << EX_inst << endl;
-        cout << "Current instruction in the MA: " << MA_inst << endl;
+        cout << "Current instruciton in the C:  " << C_inst << endl;
+        cout << "Current instruction in the MA: " << MA_inst << endl;   //
         cout << "Current instruction in the WB: " << WB_inst << endl;
                 
 
@@ -348,7 +358,7 @@ void decode(){
     else if (splitCIR.at(0).compare("LID")  == 0) OpCodeRegister = LID;
     else if (splitCIR.at(0).compare("LDA")  == 0) OpCodeRegister = LDA;
     
-    else if (splitCIR.at(0).compare("STO")  == 0) OpCodeRegister = STO;
+    else if (splitCIR.at(0).compare("STO")  == 0) { OpCodeRegister = STO; ALUD = registerFile.at(strToRegister(splitCIR.at(1)));}
     else if (splitCIR.at(0).compare("STOI") == 0) { OpCodeRegister = STOI; IMMEDIATE = stoi(splitCIR.at(1)); }
 
     else if (splitCIR.at(0).compare("AND")  == 0) OpCodeRegister = AND;
@@ -357,7 +367,7 @@ void decode(){
     else if (splitCIR.at(0).compare("LSHFT")== 0) OpCodeRegister = LSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
     else if (splitCIR.at(0).compare("RSHFT")== 0) OpCodeRegister = RSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
 
-    else if (splitCIR.at(0).compare("JMP")  == 0) OpCodeRegister = JMP;
+    else if (splitCIR.at(0).compare("JMP")  == 0) { OpCodeRegister = JMP; ALUD = registerFile.at(strToRegister(splitCIR.at(1))); }
     else if (splitCIR.at(0).compare("JMPI") == 0) OpCodeRegister = JMPI;
     else if (splitCIR.at(0).compare("BNE")  == 0) OpCodeRegister = BNE;
     else if (splitCIR.at(0).compare("BPO")  == 0) OpCodeRegister = BPO;
@@ -400,21 +410,49 @@ void issue(){
     }
     #pragma endregion State Setup
 
-    // LOGIC
-    int EUIndex = 0;
-    if      (OpCodeRegister >= ADD && OpCodeRegister <= CMP)   EUIndex = 0;
-    else if (OpCodeRegister >= AND && OpCodeRegister <= RSHFT) EUIndex = 1;
-    else if (OpCodeRegister >= JMP && OpCodeRegister <= BZ)    EUIndex = 2;
-    else if (OpCodeRegister >= LD && OpCodeRegister <= STOI)   EUIndex = 3;
-    else if (OpCodeRegister >= HALT && OpCodeRegister <= MVLO) EUIndex = 4;
+    // ALUs
+    if (OpCodeRegister >= ADD && OpCodeRegister <= CMP){
+        ALUs.at(0).OpCodeRegister = OpCodeRegister;
+        ALUs.at(0).IN0 = ALU0;
+        ALUs.at(0).IN1 = ALU1;
+        ALUs.at(0).IMMEDIATE = IMMEDIATE;
+        ALUs.at(0).state = READY;
+    }
+    // ALU
+    else if (OpCodeRegister >= AND && OpCodeRegister <= RSHFT) {
+        ALUs.at(1).OpCodeRegister = OpCodeRegister;
+        ALUs.at(1).IN0 = ALU0;
+        ALUs.at(1).IN1 = ALU1;
+        ALUs.at(1).IMMEDIATE = IMMEDIATE;
+        ALUs.at(1).state = READY;
+    }
+    // BU
+    else if (OpCodeRegister >= JMP && OpCodeRegister <= BZ) {
+        BUs.at(0).OpCodeRegister = OpCodeRegister;
+        BUs.at(0).IN0 = ALU0;
+        BUs.at(0).IN1 = ALU1;
+        BUs.at(0).IMMEDIATE = IMMEDIATE;
+        BUs.at(0).OUT = PC;         // USED FOR PC INCREMENTING
 
-    // Load into the correct EU
-    EUs.at(EUIndex).OpCodeRegister = OpCodeRegister;
-    EUs.at(EUIndex).IN0 = ALU0;
-    EUs.at(EUIndex).IN1 = ALU1;
-    EUs.at(EUIndex).IMMEDIATE = IMMEDIATE;
-    EUs.at(EUIndex).state = READY;
-    
+        BUs.at(0).state = READY;
+    }
+    // LSU
+    else if (OpCodeRegister >= LD && OpCodeRegister <= STOI) {
+        LSUs.at(0).OpCodeRegister = OpCodeRegister;
+        LSUs.at(0).IN0 = ALU0;
+        LSUs.at(0).IN1 = ALU1;
+        LSUs.at(0).IMMEDIATE = IMMEDIATE;
+        LSUs.at(0).state = READY;
+    }
+    // MISC
+    else if (OpCodeRegister >= HALT && OpCodeRegister <= MVLO) {
+        /*LSUs.at(0).OpCodeRegister = OpCodeRegister;
+        LSUs.at(0).IN0 = ALU0;
+        LSUs.at(0).IN1 = ALU1;
+        LSUs.at(0).IMMEDIATE = IMMEDIATE;
+        LSUs.at(0).state = READY;*/
+    }
+
     I_State = Next;
 }
 
@@ -442,7 +480,7 @@ void execute(){
     #pragma endregion State Setup
 
     // Passes the instruction destination register or address along
-    MEMD = ALUD; 
+    CD = ALUD; 
 
     // Set flags to false
     MEM_writeBackFlag = false;
@@ -451,28 +489,15 @@ void execute(){
 
 
     // Run all EUs
-    for (int i = 0; i < EUs.size(); i++ ){
-        // If the EU is ready to run or is currently in the process of carrying out an operation, then we run it - else we don't
-        if ( (EUs[i].state == READY) || (EUs[i].state == RUNNING) ) EUs[i].cycle();
+    for (ALU a : ALUs){
+        a.cycle();
     }
-
-    /*
-    for (int i = 0; i < EUs.size(); i++){
-        if (EUs[i].state == DONE) {
-
-            // BIG conditional block to work out what to do with EUs output
-            if      (EUs[i].typeOfEU == "ALU"){
-                //ALU_OUT = (ALU) EUs[i].ALU_OUT;
-            }
-            else if (EUs[i].typeOfEU == "LSU"){
-
-            }
-            else if (EUs[i].typeOfEU == "BU"){
-
-            }
-        }
+    for (BU b : BUs){
+        b.cycle();
     }
-    */
+    for (LSU l : LSUs){
+        l.cycle();
+    }
 
     #pragma region OldEXSystem
     /*
@@ -667,6 +692,7 @@ void execute(){
     EX_State = Next;
 }
 
+
 // Multiplexes the output of the EUs into a single line that the can then be written back
 void complete(){
     #pragma region State Setup
@@ -690,9 +716,38 @@ void complete(){
     }
     #pragma endregion State Setup
 
+    WBD = CD;
 
-    //if (0)
+    // ALU
+    for (ALU a : ALUs){
+        if (a.state == DONE){
+            C_OUT = a.OUT;
+            writeBackFlag = true;
 
+            a.state = IDLE;
+            return;
+        }
+    }
+    // BU
+    for (BU b : BUs){
+        if (b.state == DONE){
+            if (b.BranchFlag){
+                PC = b.OUT;
+            }
+            b.state = IDLE;            
+            return;
+        }
+    }
+    // LSU
+    for (LSU l : LSUs){
+        if (l.state == DONE){
+            C_OUT = l.OUT;
+            writeBackFlag = l.writeBackFlag;
+
+            l.state = IDLE;
+            return;
+        }
+    }
 
     C_State = Next;
 }
@@ -759,7 +814,7 @@ void writeBack(){
     }
     #pragma endregion State Setup
 
-    if (writeBackFlag) registerFile[WBD] = MEM_OUT;
+    if (writeBackFlag) registerFile[WBD] = C_OUT;
     //std::cout << "Written Back... " << std::endl;
 }
 

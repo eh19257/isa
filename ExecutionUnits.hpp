@@ -11,12 +11,15 @@ class ExecutionUnit{
         EUState state;
         std::string typeOfEU = "DefaultEU";
 
+        bool writeBackFlag = false;
+
         Instruction OpCodeRegister;
 
         int IN0;
         int IN1;
         int IMMEDIATE;
 
+        int DEST;
         int OUT;
     
     ExecutionUnit(){
@@ -135,9 +138,6 @@ class ALU : public ExecutionUnit{
 class BU : public ExecutionUnit{
 
     public:
-        int BUD;            // Destination address for the jump
-        int BU0;            // Input for the BU
-
         bool BranchFlag = false;    // True is there is going to be a branch - default = no branch
 
     BU(){
@@ -147,53 +147,53 @@ class BU : public ExecutionUnit{
     void cycle(){
         switch(OpCodeRegister){
             case JMP:
-            PC = registerFile[BUD];      // Again as in STO, is accessing the register file at this point illegal?
+            OUT = DEST;//registerFile[BUD];      // Again as in STO, is accessing the register file at this point illegal?
 
-            branchFlag = true;
+            BranchFlag = true;
 
             ///* STATS */ numOfBranches++;
-            cout << "BRANCH" << endl;
+            //cout << "BRANCH" << endl;
             break;
 
         case JMPI:
-            PC = PC + registerFile[BUD]; // WARNING ERROR HERE
+            OUT = OUT + DEST;//registerFile[BUD]; // WARNING ERROR HERE
 
-            branchFlag = true;
+            BranchFlag = true;
             
             ///* STATS */ numOfBranches++;
-            cout << "BRANCH" << endl;
+            //cout << "BRANCH" << endl;
             break;
 
         case BNE:
-            if (BU0 < 0) {
-                PC = registerFile[BUD];
+            if (IN0 < 0) {
+                OUT = DEST;//PC = registerFile[BUD];
                 
-                branchFlag = true;
+                BranchFlag = true;
 
                 ///* STATS */ numOfBranches++;
-                cout << "BRANCH" << endl;
+                //cout << "BRANCH" << endl;
             }
             break;
 
         case BPO:
-            if (BU0 > 0) {
-                PC = registerFile[BUD];
+            if (IN0 > 0) {
+                OUT = DEST;//PC = registerFile[BUD];
                 
-                branchFlag = true;
+                BranchFlag = true;
 
                 ///* STATS */ numOfBranches++;
-                cout << "BRANCH" << endl;
+                //cout << "BRANCH" << endl;
             }
             break;
 
         case BZ:
-            if (BU0 == 0) {
-                PC = registerFile[BUD];
+            if (IN0 == 0) {
+                OUT = DEST;//PC = registerFile[BUD];
                 
-                branchFlag = true;
+                BranchFlag = true;
 
                 ///* STATS */ numOfBranches++;
-                cout << "BRANCH" << endl; 
+                //cout << "BRANCH" << endl; 
             }
             break;
         
@@ -209,16 +209,11 @@ class BU : public ExecutionUnit{
 
 // Implementation for a load/store unit (LSU)
 class LSU : public ExecutionUnit{
-
-    
     public:
-        int LSU0;
-        int LSU1;
-        int LSUD;
-        
-        int LSU_OUT;
+        std::array<int, SIZE_OF_DATA_MEMORY>* memoryData;
 
-    LSU(){
+    LSU(std::array<int, SIZE_OF_DATA_MEMORY>* memData){
+        memoryData = memData;
         typeOfEU = "LSU";
     }
 
@@ -228,13 +223,13 @@ class LSU : public ExecutionUnit{
             OUT = IN0;
             
             writeBackFlag = true;
-            memoryReadFlag = true;
+            //memoryReadFlag = true;
             break;
         case LDD:
             OUT = IMMEDIATE;
             
             writeBackFlag = true;
-            memoryReadFlag = true;
+            //memoryReadFlag = true;
             break;
         case LDI:                   // #####################
             OUT = IMMEDIATE;
@@ -248,24 +243,23 @@ class LSU : public ExecutionUnit{
             OUT = IN0 + IN1;
 
             writeBackFlag = true;
-            memoryReadFlag = true;
+            //memoryReadFlag = true;
             break;
         case STO:
             OUT = IN0;
             WBD = registerFile[ALUD];       // register file access here might be invalid - ask Simon and see what he says
 
-            memoryWriteFlag = true;
+            //memoryWriteFlag = true;
             break;
         case STOI:                   // #####################
             OUT = IN0;
             WBD = IMMEDIATE;
 
-            memoryWriteFlag = true;
+            //memoryWriteFlag = true;
             break;
 
         default:
             throw std::invalid_argument("LSU cannot execute instruction: " + OpCodeRegister);
-
         }
 
         state = DONE;
