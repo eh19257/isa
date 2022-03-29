@@ -20,10 +20,11 @@ class ExecutionUnit{
         int IMMEDIATE;
 
         int DEST;
+        int DEST_OUT;       // We need 2 destination registers - one between I/EX and one between EX/C
         int OUT;
     
     ExecutionUnit(){
-        state = READY;
+        state = IDLE;
     }
 
     /*void multiplexer(){
@@ -43,6 +44,7 @@ class ALU : public ExecutionUnit{
     
     ALU(){
         typeOfEU = "ALU";
+        writeBackFlag = true;
         //state = READY;//std::cout << state << std::endl;
         //std::cout << state << std::endl;
     }
@@ -50,6 +52,11 @@ class ALU : public ExecutionUnit{
     void cycle(){
         // set State
         state = RUNNING;
+
+        // Update the second destination register 
+        DEST_OUT = DEST;
+
+        std::cout << "ALU cycle called" << std::endl;
 
         switch(OpCodeRegister){
             case ADD:                   // #####################
@@ -138,18 +145,22 @@ class ALU : public ExecutionUnit{
 class BU : public ExecutionUnit{
 
     public:
-        bool BranchFlag = false;    // True is there is going to be a branch - default = no branch
+        bool branchFlag = false;    // True is there is going to be a branch - default = no branch
 
     BU(){
         typeOfEU = "BU";
     }
 
     void cycle(){
+        // Set state to RUNNING
+        state = RUNNING;
+
+        std::cout << "BU cycle called" << std::endl;
         switch(OpCodeRegister){
             case JMP:
             OUT = DEST;//registerFile[BUD];      // Again as in STO, is accessing the register file at this point illegal?
 
-            BranchFlag = true;
+            branchFlag = true;
 
             ///* STATS */ numOfBranches++;
             //cout << "BRANCH" << endl;
@@ -158,7 +169,7 @@ class BU : public ExecutionUnit{
         case JMPI:
             OUT = OUT + DEST;//registerFile[BUD]; // WARNING ERROR HERE
 
-            BranchFlag = true;
+            branchFlag = true;
             
             ///* STATS */ numOfBranches++;
             //cout << "BRANCH" << endl;
@@ -168,7 +179,7 @@ class BU : public ExecutionUnit{
             if (IN0 < 0) {
                 OUT = DEST;//PC = registerFile[BUD];
                 
-                BranchFlag = true;
+                branchFlag = true;
 
                 ///* STATS */ numOfBranches++;
                 //cout << "BRANCH" << endl;
@@ -179,7 +190,7 @@ class BU : public ExecutionUnit{
             if (IN0 > 0) {
                 OUT = DEST;//PC = registerFile[BUD];
                 
-                BranchFlag = true;
+                branchFlag = true;
 
                 ///* STATS */ numOfBranches++;
                 //cout << "BRANCH" << endl;
@@ -190,7 +201,7 @@ class BU : public ExecutionUnit{
             if (IN0 == 0) {
                 OUT = DEST;//PC = registerFile[BUD];
                 
-                BranchFlag = true;
+                branchFlag = true;
 
                 ///* STATS */ numOfBranches++;
                 //cout << "BRANCH" << endl; 
@@ -218,50 +229,55 @@ class LSU : public ExecutionUnit{
     }
 
     void cycle(){
+        // Set state to RUNNING
+        state = RUNNING;
+
+        std::cout << "LSU cycle called" << std::endl;
         switch(OpCodeRegister){
             case LD:
-            OUT = IN0;
-            
-            writeBackFlag = true;
-            //memoryReadFlag = true;
-            break;
-        case LDD:
-            OUT = IMMEDIATE;
-            
-            writeBackFlag = true;
-            //memoryReadFlag = true;
-            break;
-        case LDI:                   // #####################
-            OUT = IMMEDIATE;
-            
-            writeBackFlag = true;
-            break;
-        /*case LID:                   // BROKEN ################################
-            registerFile[ALUD] = dataMemory[dataMemory[IN0]];
-            break;*/
-        case LDA:
-            OUT = IN0 + IN1;
+                OUT = memoryData->at(IN0);
+                DEST_OUT = DEST;
+                
+                writeBackFlag = true;
+                break;
 
-            writeBackFlag = true;
-            //memoryReadFlag = true;
-            break;
-        case STO:
-            OUT = IN0;
-            WBD = registerFile[ALUD];       // register file access here might be invalid - ask Simon and see what he says
+            case LDD:
+                OUT = memoryData->at(IMMEDIATE);
+                DEST_OUT = DEST;
 
-            //memoryWriteFlag = true;
-            break;
-        case STOI:                   // #####################
-            OUT = IN0;
-            WBD = IMMEDIATE;
+                writeBackFlag = true;
+                break;
 
-            //memoryWriteFlag = true;
-            break;
+            case LDI:                   // #####################
+                OUT = IMMEDIATE;
+                DEST_OUT = DEST;
 
-        default:
-            throw std::invalid_argument("LSU cannot execute instruction: " + OpCodeRegister);
+                writeBackFlag = true;
+                break;
+
+            /*case LID:                   // BROKEN ################################
+                registerFile[ALUD] = dataMemory[dataMemory[IN0]];
+                break;*/
+            case LDA:
+                OUT = memoryData->at(IN0 + IN1);
+                DEST_OUT = DEST;
+
+                writeBackFlag = true;
+                break;
+
+            case STO:
+                memoryData->at(DEST) = IN0;
+                break;
+
+            case STOI:                   // #####################
+                memoryData->at(IMMEDIATE) = IN0;
+                break;
+
+            default:
+                throw std::invalid_argument("LSU cannot execute instruction: " + OpCodeRegister);
         }
 
+        // Announce the fact that the instruction has been completed
         state = DONE;
     }
 };
@@ -273,6 +289,8 @@ class MISC : public ExecutionUnit{
     }
 
     void cycle(){
+        // Set state to RUNNING
+        state = RUNNING;
         std::cout << "NOT IMPLEMENTED MISC EU YET" << std::endl;
         
         state = DONE;

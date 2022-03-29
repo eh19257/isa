@@ -54,6 +54,7 @@ int HI, LO;                             // High and Low parts of integer multipl
 int ALUD;                               // Destination register for the output of the ALU
 
 // I/EX registers
+int ID;
 //Instruction I_EX__OpCodeRegister = NOP;
 
 // EX/C registers
@@ -91,9 +92,9 @@ std::array<int, SIZE_OF_DATA_MEMORY> dataMemory;
 
 /* Execution Units*/
 //std::array<ExecutionUnit, 4> EUs = {ALU(), ALU(), BU(), LSU()};
-std::array<ALU, 2> ALUs = {ALU(), ALU()};
-std::array<BU, 1> BUs = {BU()};
-std::array<LSU, 1> LSUs = {LSU(&dataMemory)};
+std::array<ALU*, 2> ALUs = {new ALU(), new ALU()};
+std::array<BU*, 1> BUs = {new BU()};
+std::array<LSU*, 1> LSUs = {new LSU(&dataMemory)};
 //std::array<MISC, 1> MISCs = {MISC()};
 
 
@@ -102,6 +103,7 @@ void fetch();
 void decode();  
 void issue();
 void execute();
+void complete();
 void memoryAccess();
 void writeBack();
 
@@ -221,24 +223,17 @@ void cycle(){
 
 
         // Non-pipelined 
-        //fetch(); decode(); execute(); memoryAccess(); writeBack();
-        
-    /*
-        thread(fetch);
-        thread(decode);
-        thread(execute);
-        thread(memoryAccess);
-        thread(writeBack);
-    */
+        fetch(); decode(); issue(); execute(); complete(); writeBack();
+
         // Pipelined
-        writeBack(); /*memoryAccess();*/ complete(); execute(); issue(); decode(); fetch();
+        //writeBack(); /*memoryAccess();*/ complete(); execute(); issue(); decode(); fetch();
 
         cout << "\nCurrent instruction in the IF: " << IF_inst << endl;
         cout << "Current instruction in the ID: " << ID_inst << endl;
         cout << "Current instruction in the I:  " << I_inst << endl;
         cout << "Current instruction in the EX: " << EX_inst << endl;
         cout << "Current instruciton in the C:  " << C_inst << endl;
-        cout << "Current instruction in the MA: " << MA_inst << endl;   //
+        //cout << "Current instruction in the MA: " << MA_inst << endl;   //
         cout << "Current instruction in the WB: " << WB_inst << endl;
                 
 
@@ -368,12 +363,12 @@ void decode(){
     else if (splitCIR.at(0).compare("RSHFT")== 0) OpCodeRegister = RSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
 
     else if (splitCIR.at(0).compare("JMP")  == 0) { OpCodeRegister = JMP; ALUD = registerFile.at(strToRegister(splitCIR.at(1))); }
-    else if (splitCIR.at(0).compare("JMPI") == 0) OpCodeRegister = JMPI;
-    else if (splitCIR.at(0).compare("BNE")  == 0) OpCodeRegister = BNE;
-    else if (splitCIR.at(0).compare("BPO")  == 0) OpCodeRegister = BPO;
-    else if (splitCIR.at(0).compare("BZ")   == 0) OpCodeRegister = BZ;
+    else if (splitCIR.at(0).compare("JMPI") == 0) {OpCodeRegister = JMPI; ALUD = registerFile.at(strToRegister(splitCIR.at(1))); }
+    else if (splitCIR.at(0).compare("BNE")  == 0) {OpCodeRegister = BNE; ALUD = registerFile.at(strToRegister(splitCIR.at(1))); }
+    else if (splitCIR.at(0).compare("BPO")  == 0) {OpCodeRegister = BPO; ALUD = registerFile.at(strToRegister(splitCIR.at(1))); }
+    else if (splitCIR.at(0).compare("BZ")   == 0) {OpCodeRegister = BZ; ALUD = registerFile.at(strToRegister(splitCIR.at(1))); }
 
-    else if (splitCIR.at(0).compare("HALT") == 0) OpCodeRegister = HALT;
+    else if (splitCIR.at(0).compare("HALT") == 0) {OpCodeRegister = HALT; systemHaltFlag = true;}
     else if (splitCIR.at(0).compare("NOP")  == 0) OpCodeRegister = NOP;
     else if (splitCIR.at(0).compare("MV")   == 0) OpCodeRegister = MV;
     else if (splitCIR.at(0).compare("MVHI") == 0) OpCodeRegister = MVHI;
@@ -381,7 +376,6 @@ void decode(){
 
     else throw std::invalid_argument("Unidentified Instruction: " + splitCIR.at(0));
 
-    //std::cout << "Decoded... ";
 
     ID_State = Next;
 }
@@ -410,39 +404,48 @@ void issue(){
     }
     #pragma endregion State Setup
 
+    //ID = ALUD;
+
     // ALUs
     if (OpCodeRegister >= ADD && OpCodeRegister <= CMP){
-        ALUs.at(0).OpCodeRegister = OpCodeRegister;
-        ALUs.at(0).IN0 = ALU0;
-        ALUs.at(0).IN1 = ALU1;
-        ALUs.at(0).IMMEDIATE = IMMEDIATE;
-        ALUs.at(0).state = READY;
+        ALUs.at(0)->OpCodeRegister = OpCodeRegister;
+        ALUs.at(0)->DEST = ALUD;
+        ALUs.at(0)->IN0 = ALU0;
+        ALUs.at(0)->IN1 = ALU1;
+        ALUs.at(0)->IMMEDIATE = IMMEDIATE;
+        ALUs.at(0)->state = READY;
     }
     // ALU
     else if (OpCodeRegister >= AND && OpCodeRegister <= RSHFT) {
-        ALUs.at(1).OpCodeRegister = OpCodeRegister;
-        ALUs.at(1).IN0 = ALU0;
-        ALUs.at(1).IN1 = ALU1;
-        ALUs.at(1).IMMEDIATE = IMMEDIATE;
-        ALUs.at(1).state = READY;
+        ALUs.at(1)->OpCodeRegister = OpCodeRegister;
+        ALUs.at(1)->DEST = ALUD;
+        ALUs.at(1)->IN0 = ALU0;
+        ALUs.at(1)->IN1 = ALU1;
+        ALUs.at(1)->IMMEDIATE = IMMEDIATE;
+        ALUs.at(1)->state = READY;
     }
     // BU
     else if (OpCodeRegister >= JMP && OpCodeRegister <= BZ) {
-        BUs.at(0).OpCodeRegister = OpCodeRegister;
-        BUs.at(0).IN0 = ALU0;
-        BUs.at(0).IN1 = ALU1;
-        BUs.at(0).IMMEDIATE = IMMEDIATE;
-        BUs.at(0).OUT = PC;         // USED FOR PC INCREMENTING
+        BUs.at(0)->OpCodeRegister = OpCodeRegister;
+        BUs.at(0)->DEST = ALUD;
+        BUs.at(0)->IN0 = ALU0;
+        BUs.at(0)->IN1 = ALU1;
+        BUs.at(0)->IMMEDIATE = IMMEDIATE;
+        BUs.at(0)->OUT = PC;         // USED FOR PC INCREMENTING
 
-        BUs.at(0).state = READY;
+        BUs.at(0)->state = READY;
     }
     // LSU
     else if (OpCodeRegister >= LD && OpCodeRegister <= STOI) {
-        LSUs.at(0).OpCodeRegister = OpCodeRegister;
-        LSUs.at(0).IN0 = ALU0;
-        LSUs.at(0).IN1 = ALU1;
-        LSUs.at(0).IMMEDIATE = IMMEDIATE;
-        LSUs.at(0).state = READY;
+        LSUs.at(0)->OpCodeRegister = OpCodeRegister;
+        LSUs.at(0)->DEST = ALUD;
+        LSUs.at(0)->IN0 = ALU0;
+        LSUs.at(0)->IN1 = ALU1;
+        LSUs.at(0)->IMMEDIATE = IMMEDIATE;
+
+        std::cout << "LOADED INTO LSU" << std::endl;
+
+        LSUs.at(0)->state = READY;
     }
     // MISC
     else if (OpCodeRegister >= HALT && OpCodeRegister <= MVLO) {
@@ -456,11 +459,12 @@ void issue(){
     I_State = Next;
 }
 
+
 // Executes the current instruction
 void execute(){
     #pragma region State Setup
     // Prepare state for EX
-    if (ID_State != Next) {
+    if (I_State != Next) {
         // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
         EX_State = Empty;
 
@@ -475,220 +479,24 @@ void execute(){
         EX_State = Current;
 
         // Debugging/GUI to show the current instr in the processor
-        EX_inst = ID_inst;
+        EX_inst = I_inst;
     }
     #pragma endregion State Setup
 
     // Passes the instruction destination register or address along
-    CD = ALUD; 
+    //CD = ID; 
 
     // Set flags to false
     MEM_writeBackFlag = false;
     memoryReadFlag = false;
     memoryWriteFlag = false;
 
-
     // Run all EUs
-    for (ALU a : ALUs){
-        a.cycle();
-    }
-    for (BU b : BUs){
-        b.cycle();
-    }
-    for (LSU l : LSUs){
-        l.cycle();
-    }
+    for (ALU* a : ALUs) if (a->state == READY) a->cycle();
+    for (BU*  b : BUs ) if (b->state == READY) b->cycle();
+    for (LSU* l : LSUs) if (l->state == READY) l->cycle();
 
-    #pragma region OldEXSystem
-    /*
-    // Massivce switch/case for the OpCodeRegister
-    switch (OpCodeRegister){
-        case ADD:                   // #####################
-            ALU_OUT = ALU0 + ALU1;   
-
-            MEM_writeBackFlag = true;      
-            break;
-        case ADDI:
-            ALU_OUT = ALU0 + IMMEDIATE;
-
-            MEM_writeBackFlag = true;
-            break;
-        case SUB:
-            ALU_OUT = ALU0 - ALU1;
-
-            MEM_writeBackFlag = true;
-            break;
-        case MUL:
-            ALU_OUT = ALU0 * ALU1;
-
-            MEM_writeBackFlag = true;
-            break;
-
-        //case MULO:
-            long int tempResult = (long int) ALU0 * (long int) ALU1;    // Not a register, only used to simulate a multiplication w/ overflow
-            long int HImask = (long int) (pow(2, 32) - 1) << 32;        // Again, not a register, only used to simulated multiplication w/ overflow
-
-            HI = (int) ( (tempResult & HImask) >> 32);
-            LO = (int) tempResult;
-            break;
-
-        case DIV:
-            ALU_OUT = (int) ALU0 / ALU1;
-
-            MEM_writeBackFlag = true;
-            break;
-
-        case CMP:
-            if      (ALU0 < ALU1) ALU_OUT = -1;
-            else if (ALU0 > ALU1) ALU_OUT =  1;
-            else if (ALU0 == ALU1)ALU_OUT =  0;
-            std::cout << "PAINFUL CMP" << endl;
-            MEM_writeBackFlag = true;
-            break;
-        case LD:
-            ALU_OUT = ALU0;
-            
-            MEM_writeBackFlag = true;
-            memoryReadFlag = true;
-            break;
-        case LDD:
-            ALU_OUT = IMMEDIATE;
-            
-            MEM_writeBackFlag = true;
-            memoryReadFlag = true;
-            break;
-        case LDI:                   // #####################
-            ALU_OUT = IMMEDIATE;
-            
-            MEM_writeBackFlag = true;
-            break;
-        //case LID:                   // BROKEN ################################
-            registerFile[ALUD] = dataMemory[dataMemory[ALU0]];
-            break;
-        case LDA:
-            ALU_OUT = ALU0 + ALU1;
-
-            MEM_writeBackFlag = true;
-            memoryReadFlag = true;
-            break;
-        case STO:
-            ALU_OUT = ALU0;
-            MEMD = registerFile[ALUD];       // register file access here might be invalid - ask Simon and see what he says
-
-            memoryWriteFlag = true;
-            break;
-        case STOI:                   // #####################
-            ALU_OUT = ALU0;
-            MEMD = IMMEDIATE;
-
-            memoryWriteFlag = true;
-            break;
-        case AND:
-            ALU_OUT = ALU0 & ALU1;
-
-            MEM_writeBackFlag = true;
-            break;
-        case OR:
-            ALU_OUT = ALU0 | ALU1;
-
-            MEM_writeBackFlag = true;
-            break;
-        case NOT:
-            ALU_OUT = ~ALU0;
-
-            MEM_writeBackFlag = true;
-            break;
-        case LSHFT:
-            ALU_OUT = ALU0 << ALU1;
-
-            MEM_writeBackFlag = true;
-            break;
-        case RSHFT:
-            ALU_OUT = ALU0 >> ALU1;
-
-            MEM_writeBackFlag = true;
-            break;
-        case JMP:
-            PC = registerFile[ALUD];      // Again as in STO, is accessing the register file at this point illegal?
-
-            branchFlag = true;
-
-            /* STATS numOfBranches++;
-            cout << "BRANCH" << endl;
-            break;
-        case JMPI:
-            PC = PC + registerFile[ALUD]; // WARNING ERROR HERE
-
-            branchFlag = true;
-            
-            /* STATS numOfBranches++;
-            cout << "BRANCH" << endl;
-            break;
-        case BNE:
-            if (ALU0 < 0) {
-                PC = registerFile[ALUD];
-                
-                branchFlag = true;
-
-                /* STATS  numOfBranches++;
-                cout << "BRANCH" << endl;
-            }
-            break;
-        case BPO:
-            if (ALU0 > 0) {
-                PC = registerFile[ALUD];
-                
-                branchFlag = true;
-
-                /* STATS  numOfBranches++;
-                cout << "BRANCH" << endl;
-            }
-            break;
-        case BZ:
-            if (ALU0 == 0) {
-                PC = registerFile[ALUD];
-                
-                branchFlag = true;
-
-                /* STATS  numOfBranches++;
-                cout << "BRANCH" << endl; 
-            }
-            break;
-        case HALT:                   // #####################
-            systemHaltFlag = true;
-            break;
-        case NOP:
-            break;
-        case MV:
-            ALU_OUT = ALU0;
-            
-            MEM_writeBackFlag = true;
-            break;
-
-        case MVHI:
-            ALU_OUT = HI;
-            MEMD = ALUD;
-
-            MEM_writeBackFlag = true;
-            break;
-
-        case MVLO:
-            ALU_OUT = LO;
-            MEMD = ALUD;
-
-            MEM_writeBackFlag = true;
-            break;
-        default:
-            std::cout << "Instruction not understood!!" << std::endl;
-            break;
-        
-
-    }
-    */
-    #pragma endregion OldEXSystem
-
-    //std::cout << "Executed... ";
-
+  
     EX_State = Next;
 }
 
@@ -716,36 +524,46 @@ void complete(){
     }
     #pragma endregion State Setup
 
-    WBD = CD;
+    bool foundOutputFlag = false;
+    writeBackFlag = false;
 
     // ALU
-    for (ALU a : ALUs){
-        if (a.state == DONE){
-            C_OUT = a.OUT;
+    for (ALU* a : ALUs){
+        if (a->state == DONE){
+            C_OUT = a->OUT;
             writeBackFlag = true;
+            WBD = a->DEST_OUT;
 
-            a.state = IDLE;
-            return;
+            a->state = IDLE;
+            
+            foundOutputFlag = true;
+            break;
         }
     }
     // BU
-    for (BU b : BUs){
-        if (b.state == DONE){
-            if (b.BranchFlag){
-                PC = b.OUT;
+    if (!foundOutputFlag) for (BU* b : BUs){
+        if (b->state == DONE){
+            if (b->branchFlag){
+                PC = b->OUT;
+                branchFlag = true;
             }
-            b.state = IDLE;            
-            return;
+            b->state = IDLE;            
+            
+            foundOutputFlag = true;
+            break;
         }
     }
     // LSU
-    for (LSU l : LSUs){
-        if (l.state == DONE){
-            C_OUT = l.OUT;
-            writeBackFlag = l.writeBackFlag;
+    if (!foundOutputFlag) for (LSU* l : LSUs){
+        if (l->state == DONE){
+            C_OUT = l->OUT;
+            WBD = l->DEST_OUT;
 
-            l.state = IDLE;
-            return;
+            writeBackFlag = l->writeBackFlag;
+            l->state = IDLE;
+            
+            foundOutputFlag = true;
+            break;
         }
     }
 
@@ -795,7 +613,7 @@ void memoryAccess(){
 void writeBack(){
     #pragma region State Setup
     // Prepare State for WB
-    if (MA_State != Next) {
+    if (C_State != Next) {
         // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
         WB_State = Empty;
 
@@ -810,12 +628,17 @@ void writeBack(){
         WB_State = Current;
 
         // Debugging/GUI to show the current instr in the processor
-        WB_inst = MA_inst;
+        WB_inst = C_inst;
     }
     #pragma endregion State Setup
 
-    if (writeBackFlag) registerFile[WBD] = C_OUT;
-    //std::cout << "Written Back... " << std::endl;
+    cout << "WRITE BACK" << endl;
+    if (writeBackFlag) {
+        std::cout << "Write back to index: " << WBD << " with value: " << C_OUT << std::endl;
+        registerFile[WBD] = C_OUT;
+    }
+    
+    WB_State = Next;
 }
 
 #pragma endregion F/D/E/M/W/
@@ -897,6 +720,11 @@ int main(int argc, char** argv){
 
     loadProgramIntoMemory(argv[1]);
     cycle();
+
+    // Clean up some pointers
+    for (ALU* a : ALUs) delete a;
+    for (BU*  b : BUs)  delete b;
+    for (LSU* l : LSUs) delete l;
 
     return 0;
 }
