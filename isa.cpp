@@ -9,7 +9,7 @@
 #include <thread>
 
 //#include "EnumsAndConstants.hpp"
-#include "units/ExecutionUnit.hpp"
+#include "ExecutionUnits.hpp"
 
 using namespace std;
 
@@ -19,18 +19,20 @@ bool PRINT_REGISTERS_FLAG = false;
 bool PRINT_MEMORY_FLAG = false;
 bool PRINT_STATS_FLAG = false;
 
-/* Debugging constants */
+
 int amount_of_instruction_memory_to_output = 8;  // default = 8
 
-
-/* Pipeline Stage States */
-
+/* States */
 StageState IF_State = Empty;
 StageState ID_State = Empty;
 StageState I_State = Empty;
 StageState EX_State = Empty;
+StageState C_State = Empty;
+StageState MA_State = Empty;
 StageState WB_State = Empty;
 
+
+/* Registers */
 #pragma region Registers
 
 /* "Register File" - currently just a bunch of variables */
@@ -38,17 +40,28 @@ std::array<int, 16> registerFile;    // All 16 general purpose registers
 std::array<float, 4> floatingPointRegisterFile;
 
 int PC;                     // Program Counter
+
+// IF/ID registers
 std::string CIR;            // Current Instruction Register
 int IMMEDIATE;              // Immediate register used for immediate addressing
-    
 
-// ALU registers
+
+// ID/I registers
 Instruction OpCodeRegister = NOP;       // Stores the decoded OpCode that was in the CIR
 int  ALU0, ALU1, ALU_OUT;               // 2 input regsiters for the ALU
-float ALU_FP0, ALU_FP1;                 // 2 input registers for the ALU where FP calculations are occuring
+//float ALU_FP0, ALU_FP1;                 // 2 input registers for the ALU where FP calculations are occuring
 int HI, LO;                             // High and Low parts of integer multiplication
 int ALUD;                               // Destination register for the output of the ALU
 
+// I/EX registers
+int ID;
+//Instruction I_EX__OpCodeRegister = NOP;
+
+// EX/C registers
+int CD;
+
+// C/WB registers
+int C_OUT;
 
 // MEMORY ACCESS Registers
 //int MEMD;                          // Destination address for the position in memory (STO operation) or the register in the register file (LD operation)
@@ -77,12 +90,21 @@ bool branchFlag = false;                // Used to tell the fetch stage that we 
 std::array<std::string, SIZE_OF_INSTRUCTION_MEMORY> instrMemory;
 std::array<int, SIZE_OF_DATA_MEMORY> dataMemory;
 
+/* Execution Units*/
+//std::array<ExecutionUnit, 4> EUs = {ALU(), ALU(), BU(), LSU()};
+std::array<ALU*, 2> ALUs = {new ALU(), new ALU()};
+std::array<BU*, 1> BUs = {new BU()};
+std::array<LSU*, 1> LSUs = {new LSU(&dataMemory)};
+//std::array<MISC, 1> MISCs = {MISC()};
+
 
 /* ISA Function headers */
 void fetch();
 void decode();  
 void issue();
 void execute();
+void complete();
+void memoryAccess();
 void writeBack();
 
 /* ISA helpers */
@@ -104,6 +126,8 @@ string IF_inst = "EMPTY";
 string ID_inst = "EMPTY";
 string I_inst = "EMPTY";
 string EX_inst = "EMPTY";
+string C_inst = "EMPTY";
+string MA_inst = "EMPTY";
 string WB_inst = "EMPTY";
 
 
@@ -199,23 +223,17 @@ void cycle(){
 
 
         // Non-pipelined 
-        //fetch(); decode(); execute(); memoryAccess(); writeBack();
-        
-    /*
-        thread(fetch);
-        thread(decode);
-        thread(execute);
-        thread(memoryAccess);
-        thread(writeBack);
-    */
+        fetch(); decode(); issue(); execute(); complete(); writeBack();
+
         // Pipelined
-        writeBack(); execute(); issue(); decode(); fetch();
+        //writeBack(); /*memoryAccess();*/ complete(); execute(); issue(); decode(); fetch();
 
         cout << "\nCurrent instruction in the IF: " << IF_inst << endl;
         cout << "Current instruction in the ID: " << ID_inst << endl;
-        cout << "Current instruction in the IS: " << I_inst << endl;
+        cout << "Current instruction in the I:  " << I_inst << endl;
         cout << "Current instruction in the EX: " << EX_inst << endl;
-        //cout << "Current instruction in the MA: " << MA_inst << endl;
+        cout << "Current instruciton in the C:  " << C_inst << endl;
+        //cout << "Current instruction in the MA: " << MA_inst << endl;   //
         cout << "Current instruction in the WB: " << WB_inst << endl;
                 
 
@@ -272,7 +290,7 @@ void fetch(){
 // Takes current instruction that is being used and decodes it so that it can be understood by the computer (not a massively important part)
 // Updates PC
 void decode(){
-    
+    #pragma region State Setup
     // State change for ID
     #pragma region StageStates
     if (IF_State != Next) {
@@ -292,7 +310,7 @@ void decode(){
         // Debugging/GUI to show the current instr in the processor
         ID_inst = IF_inst;
     }
-    #pragma endregion StageStates
+    #pragma endregion State Setup
 
     std::vector<std::string> splitCIR = split(CIR, ' '); // split the instruction based on ' ' and decode instruction like that
     
@@ -303,15 +321,15 @@ void decode(){
     if (splitCIR.size() > 1) {
         // Get set first/destination register
         if      (splitCIR.at(1).substr(0 ,1).compare("r")  == 0 ) ALUD = strToRegister(splitCIR.at(1));
-        else if (splitCIR.at(1).substr(0, 2).compare("FP") == 0)  ALUD = (FP_Register) stoi(splitCIR.at(1).substr(1, splitCIR.at(1).length()));
+        //else if (splitCIR.at(1).substr(0, 2).compare("FP") == 0)  ALUD = (FP_Register) stoi(splitCIR.at(1).substr(1, splitCIR.at(1).length()));
 
         if (splitCIR.size() > 2) {
             if      (splitCIR.at(2).substr(0, 1).compare("r")  == 0 ) ALU0 = registerFile.at(strToRegister(splitCIR.at(2)));
-            else if (splitCIR.at(2).substr(0, 2).compare("FP") == 0)  ALU_FP0 = (FP_Register) stoi(splitCIR.at(2).substr(1, splitCIR.at(2).length()));
+            //else if (splitCIR.at(2).substr(0, 2).compare("FP") == 0)  ALU_FP0 = (FP_Register) stoi(splitCIR.at(2).substr(1, splitCIR.at(2).length()));
             
             if (splitCIR.size() > 3) {
                 if      (splitCIR.at(3).substr(0,1).compare("r")  == 0 ) ALU1 = registerFile.at(strToRegister(splitCIR.at(3)));
-                else if (splitCIR.at(3).substr(0,1).compare("FP") == 0 ) ALU_FP1 = (FP_Register) stoi(splitCIR.at(3).substr(1, splitCIR.at(3).length()));
+                //else if (splitCIR.at(3).substr(0,1).compare("FP") == 0 ) ALU_FP1 = (FP_Register) stoi(splitCIR.at(3).substr(1, splitCIR.at(3).length()));
 
             }
         }
@@ -336,7 +354,7 @@ void decode(){
     else if (splitCIR.at(0).compare("LID")  == 0) OpCodeRegister = LID;
     else if (splitCIR.at(0).compare("LDA")  == 0) OpCodeRegister = LDA;
     
-    else if (splitCIR.at(0).compare("STO")  == 0) OpCodeRegister = STO;
+    else if (splitCIR.at(0).compare("STO")  == 0) { OpCodeRegister = STO; ALUD = registerFile.at(strToRegister(splitCIR.at(1)));}
     else if (splitCIR.at(0).compare("STOI") == 0) { OpCodeRegister = STOI; IMMEDIATE = stoi(splitCIR.at(1)); }
 
     else if (splitCIR.at(0).compare("AND")  == 0) OpCodeRegister = AND;
@@ -345,13 +363,13 @@ void decode(){
     else if (splitCIR.at(0).compare("LSHFT")== 0) OpCodeRegister = LSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
     else if (splitCIR.at(0).compare("RSHFT")== 0) OpCodeRegister = RSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
 
-    else if (splitCIR.at(0).compare("JMP")  == 0) OpCodeRegister = JMP;
-    else if (splitCIR.at(0).compare("JMPI") == 0) OpCodeRegister = JMPI;
-    else if (splitCIR.at(0).compare("BNE")  == 0) OpCodeRegister = BNE;
-    else if (splitCIR.at(0).compare("BPO")  == 0) OpCodeRegister = BPO;
-    else if (splitCIR.at(0).compare("BZ")   == 0) OpCodeRegister = BZ;
+    else if (splitCIR.at(0).compare("JMP")  == 0) { OpCodeRegister = JMP; ALUD = registerFile.at(strToRegister(splitCIR.at(1))); }
+    else if (splitCIR.at(0).compare("JMPI") == 0) {OpCodeRegister = JMPI; ALUD = registerFile.at(strToRegister(splitCIR.at(1))); }
+    else if (splitCIR.at(0).compare("BNE")  == 0) {OpCodeRegister = BNE; ALUD = registerFile.at(strToRegister(splitCIR.at(1))); }
+    else if (splitCIR.at(0).compare("BPO")  == 0) {OpCodeRegister = BPO; ALUD = registerFile.at(strToRegister(splitCIR.at(1))); }
+    else if (splitCIR.at(0).compare("BZ")   == 0) {OpCodeRegister = BZ; ALUD = registerFile.at(strToRegister(splitCIR.at(1))); }
 
-    else if (splitCIR.at(0).compare("HALT") == 0) OpCodeRegister = HALT;
+    else if (splitCIR.at(0).compare("HALT") == 0) {OpCodeRegister = HALT; systemHaltFlag = true;}
     else if (splitCIR.at(0).compare("NOP")  == 0) OpCodeRegister = NOP;
     else if (splitCIR.at(0).compare("MV")   == 0) OpCodeRegister = MV;
     else if (splitCIR.at(0).compare("MVHI") == 0) OpCodeRegister = MVHI;
@@ -359,19 +377,15 @@ void decode(){
 
     else throw std::invalid_argument("Unidentified Instruction: " + splitCIR.at(0));
 
-    //std::cout << "Decoded... ";
 
     ID_State = Next;
 }
 
 
-// Issues the current instruction to the correct execution unit
+// Issues the current instruction to it's repsective EU
 void issue(){
-    // For time being this is only a single lane issue (non-superscaler)
-
-    #pragma region StageStates
-
-    // State change for IS
+    #pragma region State Setup
+    // State change for I
     if (ID_State != Next) {
         // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
         I_State = Empty;
@@ -389,21 +403,67 @@ void issue(){
         // Debugging/GUI to show the current instr in the processor
         I_inst = ID_inst;
     }
-    #pragma endregion StageStates
+    #pragma endregion State Setup
 
-    
-    //if ()
+    //ID = ALUD;
 
+    // ALUs
+    if (OpCodeRegister >= ADD && OpCodeRegister <= CMP){
+        ALUs.at(0)->OpCodeRegister = OpCodeRegister;
+        ALUs.at(0)->DEST = ALUD;
+        ALUs.at(0)->IN0 = ALU0;
+        ALUs.at(0)->IN1 = ALU1;
+        ALUs.at(0)->IMMEDIATE = IMMEDIATE;
+        ALUs.at(0)->state = READY;
+    }
+    // ALU
+    else if (OpCodeRegister >= AND && OpCodeRegister <= RSHFT) {
+        ALUs.at(1)->OpCodeRegister = OpCodeRegister;
+        ALUs.at(1)->DEST = ALUD;
+        ALUs.at(1)->IN0 = ALU0;
+        ALUs.at(1)->IN1 = ALU1;
+        ALUs.at(1)->IMMEDIATE = IMMEDIATE;
+        ALUs.at(1)->state = READY;
+    }
+    // BU
+    else if (OpCodeRegister >= JMP && OpCodeRegister <= BZ) {
+        BUs.at(0)->OpCodeRegister = OpCodeRegister;
+        BUs.at(0)->DEST = ALUD;
+        BUs.at(0)->IN0 = ALU0;
+        BUs.at(0)->IN1 = ALU1;
+        BUs.at(0)->IMMEDIATE = IMMEDIATE;
+        BUs.at(0)->OUT = PC;         // USED FOR PC INCREMENTING
+
+        BUs.at(0)->state = READY;
+    }
+    // LSU
+    else if (OpCodeRegister >= LD && OpCodeRegister <= STOI) {
+        LSUs.at(0)->OpCodeRegister = OpCodeRegister;
+        LSUs.at(0)->DEST = ALUD;
+        LSUs.at(0)->IN0 = ALU0;
+        LSUs.at(0)->IN1 = ALU1;
+        LSUs.at(0)->IMMEDIATE = IMMEDIATE;
+
+        std::cout << "LOADED INTO LSU" << std::endl;
+
+        LSUs.at(0)->state = READY;
+    }
+    // MISC
+    else if (OpCodeRegister >= HALT && OpCodeRegister <= MVLO) {
+        /*LSUs.at(0).OpCodeRegister = OpCodeRegister;
+        LSUs.at(0).IN0 = ALU0;
+        LSUs.at(0).IN1 = ALU1;
+        LSUs.at(0).IMMEDIATE = IMMEDIATE;
+        LSUs.at(0).state = READY;*/
+    }
 
     I_State = Next;
 }
 
 
-
 // Executes the current instruction
 void execute(){
-
-    #pragma region StageStates
+    #pragma region State Setup
     // Prepare state for EX
     if (I_State != Next) {
         // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
@@ -422,207 +482,98 @@ void execute(){
         // Debugging/GUI to show the current instr in the processor
         EX_inst = I_inst;
     }
-    #pragma endregion StageStates
+    #pragma endregion State Setup
 
     // Passes the instruction destination register or address along
-    WBD = ALUD; 
+    //CD = ID; 
 
     // Set flags to false
     writeBackFlag= false;
     memoryReadFlag = false;
     memoryWriteFlag = false;
 
-    // Massivce switch/case for the OpCodeRegister
-    switch (OpCodeRegister){
-        case ADD:                   // #####################
-            ALU_OUT = ALU0 + ALU1;   
+    // Run all EUs
+    for (ALU* a : ALUs) if (a->state == READY) a->cycle();
+    for (BU*  b : BUs ) if (b->state == READY) b->cycle();
+    for (LSU* l : LSUs) if (l->state == READY) l->cycle();
 
-            writeBackFlag = true;      
-            break;
-        case ADDI:
-            ALU_OUT = ALU0 + IMMEDIATE;
+  
+    EX_State = Next;
+}
 
+
+// Multiplexes the output of the EUs into a single line that the can then be written back
+void complete(){
+    #pragma region State Setup
+    // Prepare state for EX
+    if (EX_State != Next) {
+        // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
+        C_State = Empty;
+
+        // Debugging/GUI to show that the current instruction is empty
+        C_inst = string("");
+
+        // increments stall count
+        numOfStalls += 1;
+        return;
+    } else {
+        // Else it can run
+        C_State = Current;
+
+        // Debugging/GUI to show the current instr in the processor
+        C_inst = EX_inst;
+    }
+    #pragma endregion State Setup
+
+    bool foundOutputFlag = false;
+    writeBackFlag = false;
+
+    // ALU
+    for (ALU* a : ALUs){
+        if (a->state == DONE){
+            C_OUT = a->OUT;
             writeBackFlag = true;
-            break;
-        case SUB:
-            ALU_OUT = ALU0 - ALU1;
+            WBD = a->DEST_OUT;
 
-            writeBackFlag = true;
-            break;
-        case MUL:
-            ALU_OUT = ALU0 * ALU1;
-
-            writeBackFlag = true;
-            break;
-
-        /*case MULO:
-            long int tempResult = (long int) ALU0 * (long int) ALU1;    // Not a register, only used to simulate a multiplication w/ overflow
-            long int HImask = (long int) (pow(2, 32) - 1) << 32;        // Again, not a register, only used to simulated multiplication w/ overflow
-
-            HI = (int) ( (tempResult & HImask) >> 32);
-            LO = (int) tempResult;
-            break;*/
-
-        case DIV:
-            ALU_OUT = (int) ALU0 / ALU1;
-
-            writeBackFlag = true;
-            break;
-
-        case CMP:
-            if      (ALU0 < ALU1) ALU_OUT = -1;
-            else if (ALU0 > ALU1) ALU_OUT =  1;
-            else if (ALU0 == ALU1)ALU_OUT =  0;
-            std::cout << "PAINFUL CMP" << endl;
-            writeBackFlag = true;
-            break;
-        case LD:
-            ALU_OUT = ALU0;
+            a->state = IDLE;
             
-            writeBackFlag = true;
-            memoryReadFlag = true;
+            foundOutputFlag = true;
             break;
-        case LDD:
-            ALU_OUT = IMMEDIATE;
-            
-            writeBackFlag = true;
-            memoryReadFlag = true;
-            break;
-        case LDI:                   // #####################
-            ALU_OUT = IMMEDIATE;
-            
-            writeBackFlag = true;
-            break;
-        /*case LID:                   // BROKEN ################################
-            registerFile[ALUD] = dataMemory[dataMemory[ALU0]];
-            break;*/
-        case LDA:
-            ALU_OUT = ALU0 + ALU1;
-
-            writeBackFlag = true;
-            memoryReadFlag = true;
-            break;
-        case STO:
-            ALU_OUT = ALU0;
-            WBD = registerFile[ALUD];       // register file access here might be invalid - ask Simon and see what he says
-
-            memoryWriteFlag = true;
-            break;
-        case STOI:                   // #####################
-            ALU_OUT = ALU0;
-            WBD = IMMEDIATE;
-
-            memoryWriteFlag = true;
-            break;
-        case AND:
-            ALU_OUT = ALU0 & ALU1;
-
-            writeBackFlag = true;
-            break;
-        case OR:
-            ALU_OUT = ALU0 | ALU1;
-
-            writeBackFlag = true;
-            break;
-        case NOT:
-            ALU_OUT = ~ALU0;
-
-            writeBackFlag = true;
-            break;
-        case LSHFT:
-            ALU_OUT = ALU0 << ALU1;
-
-            writeBackFlag = true;
-            break;
-        case RSHFT:
-            ALU_OUT = ALU0 >> ALU1;
-
-            writeBackFlag = true;
-            break;
-        case JMP:
-            PC = registerFile[ALUD];      // Again as in STO, is accessing the register file at this point illegal?
-
-            branchFlag = true;
-
-            /* STATS */ numOfBranches++;
-            cout << "BRANCH" << endl;
-            break;
-        case JMPI:
-            PC = PC + registerFile[ALUD]; // WARNING ERROR HERE
-
-            branchFlag = true;
-            
-            /* STATS */ numOfBranches++;
-            cout << "BRANCH" << endl;
-            break;
-        case BNE:
-            if (ALU0 < 0) {
-                PC = registerFile[ALUD];
-                
+        }
+    }
+    // BU
+    if (!foundOutputFlag) for (BU* b : BUs){
+        if (b->state == DONE){
+            if (b->branchFlag){
+                PC = b->OUT;
                 branchFlag = true;
-
-                /* STATS */ numOfBranches++;
-                cout << "BRANCH" << endl;
             }
-            break;
-        case BPO:
-            if (ALU0 > 0) {
-                PC = registerFile[ALUD];
-                
-                branchFlag = true;
-
-                /* STATS */ numOfBranches++;
-                cout << "BRANCH" << endl;
-            }
-            break;
-        case BZ:
-            if (ALU0 == 0) {
-                PC = registerFile[ALUD];
-                
-                branchFlag = true;
-
-                /* STATS */ numOfBranches++;
-                cout << "BRANCH" << endl; 
-            }
-            break;
-        case HALT:                   // #####################
-            systemHaltFlag = true;
-            break;
-        case NOP:
-            break;
-        case MV:
-            ALU_OUT = ALU0;
+            b->state = IDLE;            
             
-            writeBackFlag = true;
+            foundOutputFlag = true;
             break;
+        }
+    }
+    // LSU
+    if (!foundOutputFlag) for (LSU* l : LSUs){
+        if (l->state == DONE){
+            C_OUT = l->OUT;
+            WBD = l->DEST_OUT;
 
-        case MVHI:
-            ALU_OUT = HI;
-            WBD = ALUD;
-
-            writeBackFlag = true;
+            writeBackFlag = l->writeBackFlag;
+            l->state = IDLE;
+            
+            foundOutputFlag = true;
             break;
-
-        case MVLO:
-            ALU_OUT = LO;
-            WBD = ALUD;
-
-            writeBackFlag = true;
-            break;
-        default:
-            std::cout << "Instruction not understood!!" << std::endl;
-            break;
-
+        }
     }
 
-    //std::cout << "Executed... ";
-
-    EX_State = Next;
+    C_State = Next;
 }
 /*
 // Memory access part of the pipeline: LD and STO operations access the memory here. Branches set the PC here
 void memoryAccess(){
-
+    #pragma region State Setup
     // Prepare State for MA
     if (EX_State != Next) {
         // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
@@ -641,6 +592,7 @@ void memoryAccess(){
         // Debugging/GUI to show the current instr in the processor
         MA_inst = EX_inst;
     }
+    #pragma endregion State Setup
 
     // IF BRANCH RETURN
     // Passes the instruction destination register or address along
@@ -661,10 +613,9 @@ void memoryAccess(){
 
 // Data written back into register file: Write backs don't occur on STO or HALT (or NOP)
 void writeBack(){
-
-    #pragma region StageStates
+    #pragma region State Setup
     // Prepare State for WB
-    if (EX_State != Next) {
+    if (C_State != Next) {
         // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
         WB_State = Empty;
 
@@ -679,12 +630,17 @@ void writeBack(){
         WB_State = Current;
 
         // Debugging/GUI to show the current instr in the processor
-        WB_inst = EX_inst;
+        WB_inst = C_inst;
     }
-    #pragma endregion StageStates
+    #pragma endregion State Setup
 
-    if (writeBackFlag) registerFile[WBD] = ALU_OUT;
-    //std::cout << "Written Back... " << std::endl;
+    cout << "WRITE BACK" << endl;
+    if (writeBackFlag) {
+        std::cout << "Write back to index: " << WBD << " with value: " << C_OUT << std::endl;
+        registerFile[WBD] = C_OUT;
+    }
+    
+    WB_State = Next;
 }
 
 #pragma endregion F/D/E/M/W/
@@ -767,6 +723,11 @@ int main(int argc, char** argv){
     ALU foo = ALU();
     //loadProgramIntoMemory(argv[1]);
     //cycle();
+
+    // Clean up some pointers
+    for (ALU* a : ALUs) delete a;
+    for (BU*  b : BUs)  delete b;
+    for (LSU* l : LSUs) delete l;
 
     return 0;
 }

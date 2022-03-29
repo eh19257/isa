@@ -52,7 +52,7 @@ enum FP_Register {FP0, FP1, FP2, FP3};
 enum StageState {Empty, Current, Next};
 
 /* Execution States of a single EU */
-enum EUState {READY, RUNNING, DONE};
+enum EUState {IDLE, READY, RUNNING, DONE};
 
 /* Constants */
 const int SIZE_OF_INSTRUCTION_MEMORY = 256;     // size of the read-only instruction memory
