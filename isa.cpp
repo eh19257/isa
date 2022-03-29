@@ -223,10 +223,10 @@ void cycle(){
 
 
         // Non-pipelined 
-        fetch(); decode(); issue(); execute(); complete(); writeBack();
+        //fetch(); decode(); issue(); execute(); complete(); writeBack();
 
         // Pipelined
-        //writeBack(); /*memoryAccess();*/ complete(); execute(); issue(); decode(); fetch();
+        writeBack(); /*memoryAccess();*/ complete(); execute(); issue(); decode(); fetch();
 
         cout << "\nCurrent instruction in the IF: " << IF_inst << endl;
         cout << "Current instruction in the ID: " << ID_inst << endl;
@@ -720,9 +720,9 @@ int main(int argc, char** argv){
         return 0;
     }
 
-    ALU foo = ALU();
-    //loadProgramIntoMemory(argv[1]);
-    //cycle();
+    //ALU foo = ALU();
+    loadProgramIntoMemory(argv[1]);
+    cycle();
 
     // Clean up some pointers
     for (ALU* a : ALUs) delete a;
