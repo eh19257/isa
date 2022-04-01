@@ -223,10 +223,10 @@ void cycle(){
 
 
         // Non-pipelined 
-        fetch(); decode(); issue(); execute(); complete(); writeBack();
+        //fetch(); decode(); issue(); execute(); complete(); writeBack();
 
         // Pipelined
-        //writeBack(); /*memoryAccess();*/ complete(); execute(); issue(); decode(); fetch();
+        writeBack(); /*memoryAccess();*/ complete(); execute(); issue(); decode(); fetch();
 
         cout << "\nCurrent instruction in the IF: " << IF_inst << endl;
         cout << "Current instruction in the ID: " << ID_inst << endl;
@@ -495,7 +495,6 @@ void execute(){
     for (ALU* a : ALUs) if (a->state == READY) a->cycle();
     for (BU*  b : BUs ) if (b->state == READY) b->cycle();
     for (LSU* l : LSUs) if (l->state == READY) l->cycle();
-
   
     EX_State = Next;
 }
@@ -527,6 +526,9 @@ void complete(){
     bool foundOutputFlag = false;
     writeBackFlag = false;
 
+
+    for (LSU* l : LSUs) std::cout << "On Pointer: " << l->state << std::endl; 
+    std::cout << "On other side: " << LSUs.at(0)->state << std::endl;
     // ALU
     for (ALU* a : ALUs){
         if (a->state == DONE){
@@ -555,10 +557,11 @@ void complete(){
     }
     // LSU
     if (!foundOutputFlag) for (LSU* l : LSUs){
+        cout << "State of the LSU in COmplete(): " << l->state << endl;
         if (l->state == DONE){
             C_OUT = l->OUT;
             WBD = l->DEST_OUT;
-
+            std::cout << "In Complete(), writeBackFlag: " << l-> writeBackFlag << endl;
             writeBackFlag = l->writeBackFlag;
             l->state = IDLE;
             
@@ -570,6 +573,7 @@ void complete(){
     C_State = Next;
 }
 
+/*
 // Memory access part of the pipeline: LD and STO operations access the memory here. Branches set the PC here
 void memoryAccess(){
     #pragma region State Setup
@@ -608,6 +612,7 @@ void memoryAccess(){
     //std::cout << "Memory Accessed... ";
     MA_State = Next;
 }
+*/
 
 // Data written back into register file: Write backs don't occur on STO or HALT (or NOP)
 void writeBack(){

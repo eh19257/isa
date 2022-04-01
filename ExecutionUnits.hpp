@@ -44,7 +44,7 @@ class ALU : public ExecutionUnit{
     
     ALU(){
         typeOfEU = "ALU";
-        writeBackFlag = true;
+        //writeBackFlag = true;
         //state = READY;//std::cout << state << std::endl;
         //std::cout << state << std::endl;
     }
@@ -52,6 +52,7 @@ class ALU : public ExecutionUnit{
     void cycle(){
         // set State
         state = RUNNING;
+        this->writeBackFlag = true;
 
         // Update the second destination register 
         DEST_OUT = DEST;
@@ -62,25 +63,25 @@ class ALU : public ExecutionUnit{
             case ADD:                   // #####################
                 OUT = IN0 + IN1;;   
 
-                //writeBackFlag = true;      
+                //this->writeBackFlag = true;      
                 break;
 
             case ADDI:
                 OUT = IN0 + IMMEDIATE;
 
-                //writeBackFlag = true;
+                //this->writeBackFlag = true;
                 break;
 
             case SUB:
                 OUT = IN0 - IN1;
 
-                //writeBackFlag = true;
+                //this->writeBackFlag = true;
                 break;
 
             case MUL:
                 OUT = IN0 * IN1;
 
-                //writeBackFlag = true;
+                //this->writeBackFlag = true;
                 break;
 
             /*case MULO:
@@ -94,7 +95,7 @@ class ALU : public ExecutionUnit{
             case DIV:
                 OUT = (int) IN0 / IN1;
 
-                //writeBackFlag = true;
+                //this->writeBackFlag = true;
                 break;
 
             case CMP:
@@ -102,33 +103,33 @@ class ALU : public ExecutionUnit{
                 else if (IN0 > IN1) OUT =  1;
                 else                OUT =  0;
             
-                //writeBackFlag = true;
+                //this->writeBackFlag = true;
                 break;
 
             case AND:
                 OUT = IN0 & IN1;
 
-                //writeBackFlag = true;
+                //this->writeBackFlag = true;
                 break;
             case OR:
                 OUT = IN0 | IN1;
 
-                //writeBackFlag = true;
+                //this->writeBackFlag = true;
                 break;
             case NOT:
                 OUT = ~IN0;
 
-                //writeBackFlag = true;
+                //this->writeBackFlag = true;
                 break;
             case LSHFT:
                 OUT = IN0 << IN1;
 
-                //writeBackFlag = true;
+                //this->writeBackFlag = true;
                 break;
             case RSHFT:
                 OUT = IN0 >> IN1;
 
-                //writeBackFlag = true;
+                //this->writeBackFlag = true;
                 break;
             
             default:
@@ -238,21 +239,22 @@ class LSU : public ExecutionUnit{
                 OUT = memoryData->at(IN0);
                 DEST_OUT = DEST;
                 
-                writeBackFlag = true;
+                this->writeBackFlag = true;
                 break;
 
             case LDD:
                 OUT = memoryData->at(IMMEDIATE);
                 DEST_OUT = DEST;
 
-                writeBackFlag = true;
+                this->writeBackFlag = true;
                 break;
 
             case LDI:                   // #####################
                 OUT = IMMEDIATE;
                 DEST_OUT = DEST;
-
-                writeBackFlag = true;
+        
+                this->writeBackFlag = true;
+                std::cout << "LDI IS RUNNING HERE!!! this->writeBackFlag: " << this->writeBackFlag << std::endl;
                 break;
 
             /*case LID:                   // BROKEN ################################
@@ -262,7 +264,7 @@ class LSU : public ExecutionUnit{
                 OUT = memoryData->at(IN0 + IN1);
                 DEST_OUT = DEST;
 
-                writeBackFlag = true;
+                this->writeBackFlag = true;
                 break;
 
             case STO:
@@ -278,7 +280,8 @@ class LSU : public ExecutionUnit{
         }
 
         // Announce the fact that the instruction has been completed
-        state = DONE;
+        this->state = DONE;
+        std::cout << "Does this even run?: " << this->state << std::endl;
     }
 };
 
