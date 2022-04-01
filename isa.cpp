@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <algorithm>
 #include <thread>
+#include <queue>
 
 //#include "EnumsAndConstants.hpp"
 #include "ExecutionUnits.hpp"
@@ -49,6 +50,9 @@ int IMMEDIATE;              // Immediate register used for immediate addressing
 // ID/I registers
 Instruction OpCodeRegister = NOP;       // Stores the decoded OpCode that was in the CIR
 int  ALU0, ALU1, ALU_OUT;               // 2 input regsiters for the ALU
+
+DecodedInstruction ID_I_Inst; 
+
 //float ALU_FP0, ALU_FP1;                 // 2 input registers for the ALU where FP calculations are occuring
 int HI, LO;                             // High and Low parts of integer multiplication
 int ALUD;                               // Destination register for the output of the ALU
@@ -97,6 +101,10 @@ std::array<BU*, 1> BUs = {new BU()};
 std::array<LSU*, 1> LSUs = {new LSU(&dataMemory)};
 //std::array<MISC, 1> MISCs = {MISC()};
 
+/* Reservation Stations */
+std::vector<DecodedInstruction> ALU_RV;
+std::vector<DecodedInstruction> BU_RV;
+std::vector<DecodedInstruction> LSU_RV;
 
 /* ISA Function headers */
 void fetch();
@@ -252,7 +260,13 @@ void cycle(){
 
 // Fetches the next instruction that is to be ran, this instruction is fetched by taking the PCs index 
 void fetch(){
+
     // Change the state of the IF such that it is "currently running"
+    if (ID_State == Block || ID_State == Current) {
+        IF_State = Block;
+        return;
+    }
+
     IF_State = Current;
     
     // Load the memory address that is in the instruction memory address that is pointed to by the PC
@@ -292,8 +306,15 @@ void fetch(){
 void decode(){
     #pragma region State Setup
     // State change for ID
-    if (IF_State != Next) {
-        // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
+    if (I_State == Block || I_State == Current) {
+        ID_State = Block;
+        return;
+    }
+    if (ID_State == Current); // Do not change anything about the state of this stage and let it continue to run
+
+    else if (IF_State != Next) {
+        // Case if the instruction in the Fetch is not moving over
+
         ID_State = Empty;
 
         // Debugging/GUI to show that the current instruction is empty
@@ -302,12 +323,14 @@ void decode(){
         // increments stall count
         numOfStalls += 1;
         return;
-    } else {
-        // Else it can run
+    }
+    else if (IF_State == Next) {
+        // If the previous stage has ran then we can move that instruction into the next stage along the pipeline
+
         ID_State = Current;
 
         // Debugging/GUI to show the current instr in the processor
-        ID_inst = IF_inst;
+        ID_inst = IF_inst; 
     }
     #pragma endregion State Setup
 
@@ -377,6 +400,14 @@ void decode(){
     else throw std::invalid_argument("Unidentified Instruction: " + splitCIR.at(0));
 
 
+    // Crush instruction into a DecodedInstruction dataType
+    ID_I_Inst.OpCode = OpCodeRegister;
+    ID_I_Inst.DEST = ALUD;
+    ID_I_Inst.IN0 = ALU0;
+    ID_I_Inst.IN1 = ALU1;
+    ID_I_Inst.IMM = IMMEDIATE;
+    ID_I_Inst.OUT = PC;     // It is only set to the PC for the single instruction JMPI (indexed JMP)
+
     ID_State = Next;
 }
 
@@ -385,7 +416,13 @@ void decode(){
 void issue(){
     #pragma region State Setup
     // State change for I
-    if (ID_State != Next) {
+    if (EX_State == Block || EX_State == Current) {
+        I_State = Block;
+        return;
+    }
+
+    if (I_State == Current); // Do not change anything about the state of this stage and let it continue to run
+    else if (ID_State != Next) {
         // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
         I_State = Empty;
 
@@ -408,36 +445,44 @@ void issue(){
 
     // ALUs
     if (OpCodeRegister >= ADD && OpCodeRegister <= CMP){
-        ALUs.at(0)->OpCodeRegister = OpCodeRegister;
+        ALU_RV.push_back(ID_I_Inst);
+        
+        /*ALUs.at(0)->OpCodeRegister = OpCodeRegister;
         ALUs.at(0)->DEST = ALUD;
         ALUs.at(0)->IN0 = ALU0;
         ALUs.at(0)->IN1 = ALU1;
         ALUs.at(0)->IMMEDIATE = IMMEDIATE;
-        ALUs.at(0)->state = READY;
+        ALUs.at(0)->state = READY;*/
     }
     // ALU
     else if (OpCodeRegister >= AND && OpCodeRegister <= RSHFT) {
-        ALUs.at(1)->OpCodeRegister = OpCodeRegister;
+        ALU_RV.push_back(ID_I_Inst);
+
+        /*ALUs.at(1)->OpCodeRegister = OpCodeRegister;
         ALUs.at(1)->DEST = ALUD;
         ALUs.at(1)->IN0 = ALU0;
         ALUs.at(1)->IN1 = ALU1;
         ALUs.at(1)->IMMEDIATE = IMMEDIATE;
-        ALUs.at(1)->state = READY;
+        ALUs.at(1)->state = READY;*/
     }
     // BU
     else if (OpCodeRegister >= JMP && OpCodeRegister <= BZ) {
-        BUs.at(0)->OpCodeRegister = OpCodeRegister;
+        BU_RV.push_back(ID_I_Inst);
+
+        /*BUs.at(0)->OpCodeRegister = OpCodeRegister;
         BUs.at(0)->DEST = ALUD;
         BUs.at(0)->IN0 = ALU0;
         BUs.at(0)->IN1 = ALU1;
         BUs.at(0)->IMMEDIATE = IMMEDIATE;
         BUs.at(0)->OUT = PC;         // USED FOR PC INCREMENTING
 
-        BUs.at(0)->state = READY;
+        BUs.at(0)->state = READY;*/
     }
     // LSU
     else if (OpCodeRegister >= LD && OpCodeRegister <= STOI) {
-        LSUs.at(0)->OpCodeRegister = OpCodeRegister;
+        LSU_RV.push_back(ID_I_Inst);
+        
+        /*LSUs.at(0)->OpCodeRegister = OpCodeRegister;
         LSUs.at(0)->DEST = ALUD;
         LSUs.at(0)->IN0 = ALU0;
         LSUs.at(0)->IN1 = ALU1;
@@ -445,7 +490,7 @@ void issue(){
 
         std::cout << "LOADED INTO LSU" << std::endl;
 
-        LSUs.at(0)->state = READY;
+        LSUs.at(0)->state = READY;*/
     }
     // MISC
     else if (OpCodeRegister >= HALT && OpCodeRegister <= MVLO) {
@@ -464,7 +509,13 @@ void issue(){
 void execute(){
     #pragma region State Setup
     // Prepare state for EX
-    if (I_State != Next) {
+    if (C_State == Block || C_State == Current) {
+        EX_State = Block;
+        return;
+    }
+
+    if (EX_State == Current); // Do not change anything about the state of this stage and let it continue to run
+    else if (I_State != Next) {
         // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
         EX_State = Empty;
 
@@ -483,18 +534,19 @@ void execute(){
     }
     #pragma endregion State Setup
 
-    // Passes the instruction destination register or address along
-    //CD = ID; 
-
     // Set flags to false
     MEM_writeBackFlag = false;
     memoryReadFlag = false;
     memoryWriteFlag = false;
 
+    // FILLING IN THE RESERVATION STATIONS
+    if (ALUs.at(0)->state == IDLE) // LOAD IN ID_I_Inst into the ALU
+    // REPEAT FOR ALL OTHER EUs
+
     // Run all EUs
-    for (ALU* a : ALUs) if (a->state == READY) a->cycle();
-    for (BU*  b : BUs ) if (b->state == READY) b->cycle();
-    for (LSU* l : LSUs) if (l->state == READY) l->cycle();
+    for (ALU* a : ALUs) if (a->state == READY || a->state == RUNNING) a->cycle();
+    for (BU*  b : BUs ) if (b->state == READY || b->state == RUNNING) b->cycle();
+    for (LSU* l : LSUs) if (l->state == READY || l->state == RUNNING) l->cycle();
   
     EX_State = Next;
 }
@@ -504,7 +556,13 @@ void execute(){
 void complete(){
     #pragma region State Setup
     // Prepare state for EX
-    if (EX_State != Next) {
+    if (WB_State == Block || WB_State == Current) {
+        C_State = Block;
+        return;
+    }
+
+    if (C_State == Current); // Do not change anything about the state of this stage and let it continue to run
+    else if (EX_State != Next) {
         // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
         C_State = Empty;
 
@@ -618,7 +676,8 @@ void memoryAccess(){
 void writeBack(){
     #pragma region State Setup
     // Prepare State for WB
-    if (C_State != Next) {
+    if (WB_State == Current); // Do not change anything about the state of this stage and let it continue to run
+    else if (C_State != Next) {
         // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
         WB_State = Empty;
 

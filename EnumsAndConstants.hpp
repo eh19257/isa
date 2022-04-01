@@ -40,6 +40,15 @@ enum Instruction {
     MVLO,
 };
 
+/* Instruction Struct - used for passing entire instructions between Reservation stations and EUs */
+ struct DecodedInstruction {
+     Instruction OpCode;
+     int DEST;      // Destination for the instruction  (optional) 
+     int IN0;       // Input 1
+     int IN1;       // Input 2                          (optional) 
+     int IMM;       // Immediate                        (optional) 
+     int OUT;       // Output for the instruction       (optional) 
+ };
 
 /* Registers */
 #pragma region Registers
@@ -49,7 +58,7 @@ enum FP_Register {FP0, FP1, FP2, FP3};
 
 /* States of a single pipeline stage */
 // Empty - nothing in the stage; Current - the stage is currently running; Next - the stage has completed and is ready to move to the next stage
-enum StageState {Empty, Current, Next};
+enum StageState {Empty, Current, Next, Block};
 
 /* Execution States of a single EU */
 enum EUState {IDLE, READY, RUNNING, DONE};
