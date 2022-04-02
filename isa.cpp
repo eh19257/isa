@@ -99,12 +99,13 @@ std::array<int, SIZE_OF_DATA_MEMORY> dataMemory;
 std::array<ALU*, 2> ALUs = {new ALU(), new ALU()};
 std::array<BU*, 1> BUs = {new BU()};
 std::array<LSU*, 1> LSUs = {new LSU(&dataMemory)};
-//std::array<MISC, 1> MISCs = {MISC()};
+std::array<MISC*, 1> MISCs = {new MISC()};
 
 /* Reservation Stations */
 std::vector<DecodedInstruction> ALU_RV;
 std::vector<DecodedInstruction> BU_RV;
 std::vector<DecodedInstruction> LSU_RV;
+std::vector<DecodedInstruction> MISC_RV;
 
 /* ISA Function headers */
 void fetch();
@@ -216,6 +217,19 @@ void fushPipeline(){
 
     ID_State = Empty;
     ID_inst = "";
+
+    I_State = Empty;
+    I_inst = "";
+
+    EX_State = Empty;
+    EX_inst = "";
+
+    // Flush all EUs as well
+    ALUs.at(0)->state = IDLE;
+    ALUs.at(1)->state = IDLE;
+    BUs.at(0)->state = IDLE;
+    LSUs.at(0)->state = IDLE;
+    MISCs.at(0)->state = IDLE;
 }
 
 // The main cycle of the processor
@@ -234,16 +248,18 @@ void cycle(){
         //fetch(); decode(); issue(); execute(); complete(); writeBack();
 
         // Pipelined
-        writeBack(); /*memoryAccess();*/ complete(); execute(); issue(); decode(); fetch();
+        writeBack(); complete(); execute(); issue(); decode(); fetch();
 
         cout << "\nCurrent instruction in the IF: " << IF_inst << endl;
         cout << "Current instruction in the ID: " << ID_inst << endl;
         cout << "Current instruction in the I:  " << I_inst << endl;
         cout << "Current instruction in the EX: " << EX_inst << endl;
         cout << "Current instruciton in the C:  " << C_inst << endl;
-        //cout << "Current instruction in the MA: " << MA_inst << endl;   //
         cout << "Current instruction in the WB: " << WB_inst << endl;
                 
+
+        cout << "\n\n" << endl;
+        outputAllMemory(amount_of_instruction_memory_to_output);
 
         if (PRINT_REGISTERS_FLAG) printRegisterFile(16);
 
@@ -272,12 +288,15 @@ void fetch(){
     // Load the memory address that is in the instruction memory address that is pointed to by the PC
     CIR = instrMemory.at(PC);
 
+    /*
     // Increment PC or don't (depending on whether we are on a branch or not)
     if (branchFlag){
         branchFlag = false;
     } else {
         PC++;
-    }
+    }*/
+
+    PC++;
 
     // Debugging/GUI to show the current instr in the processor
     IF_inst = CIR;
@@ -391,7 +410,7 @@ void decode(){
     else if (splitCIR.at(0).compare("BPO")  == 0) {OpCodeRegister = BPO; ALUD = registerFile.at(strToRegister(splitCIR.at(1))); }
     else if (splitCIR.at(0).compare("BZ")   == 0) {OpCodeRegister = BZ; ALUD = registerFile.at(strToRegister(splitCIR.at(1))); }
 
-    else if (splitCIR.at(0).compare("HALT") == 0) {OpCodeRegister = HALT; systemHaltFlag = true;}
+    else if (splitCIR.at(0).compare("HALT") == 0) OpCodeRegister = HALT;
     else if (splitCIR.at(0).compare("NOP")  == 0) OpCodeRegister = NOP;
     else if (splitCIR.at(0).compare("MV")   == 0) OpCodeRegister = MV;
     else if (splitCIR.at(0).compare("MVHI") == 0) OpCodeRegister = MVHI;
@@ -441,64 +460,29 @@ void issue(){
     }
     #pragma endregion State Setup
 
-    //ID = ALUD;
-
     // ALUs
     if (OpCodeRegister >= ADD && OpCodeRegister <= CMP){
         ALU_RV.push_back(ID_I_Inst);
         
-        /*ALUs.at(0)->OpCodeRegister = OpCodeRegister;
-        ALUs.at(0)->DEST = ALUD;
-        ALUs.at(0)->IN0 = ALU0;
-        ALUs.at(0)->IN1 = ALU1;
-        ALUs.at(0)->IMMEDIATE = IMMEDIATE;
-        ALUs.at(0)->state = READY;*/
     }
     // ALU
     else if (OpCodeRegister >= AND && OpCodeRegister <= RSHFT) {
         ALU_RV.push_back(ID_I_Inst);
 
-        /*ALUs.at(1)->OpCodeRegister = OpCodeRegister;
-        ALUs.at(1)->DEST = ALUD;
-        ALUs.at(1)->IN0 = ALU0;
-        ALUs.at(1)->IN1 = ALU1;
-        ALUs.at(1)->IMMEDIATE = IMMEDIATE;
-        ALUs.at(1)->state = READY;*/
     }
     // BU
     else if (OpCodeRegister >= JMP && OpCodeRegister <= BZ) {
         BU_RV.push_back(ID_I_Inst);
 
-        /*BUs.at(0)->OpCodeRegister = OpCodeRegister;
-        BUs.at(0)->DEST = ALUD;
-        BUs.at(0)->IN0 = ALU0;
-        BUs.at(0)->IN1 = ALU1;
-        BUs.at(0)->IMMEDIATE = IMMEDIATE;
-        BUs.at(0)->OUT = PC;         // USED FOR PC INCREMENTING
-
-        BUs.at(0)->state = READY;*/
     }
     // LSU
     else if (OpCodeRegister >= LD && OpCodeRegister <= STOI) {
         LSU_RV.push_back(ID_I_Inst);
         
-        /*LSUs.at(0)->OpCodeRegister = OpCodeRegister;
-        LSUs.at(0)->DEST = ALUD;
-        LSUs.at(0)->IN0 = ALU0;
-        LSUs.at(0)->IN1 = ALU1;
-        LSUs.at(0)->IMMEDIATE = IMMEDIATE;
-
-        std::cout << "LOADED INTO LSU" << std::endl;
-
-        LSUs.at(0)->state = READY;*/
     }
     // MISC
     else if (OpCodeRegister >= HALT && OpCodeRegister <= MVLO) {
-        /*LSUs.at(0).OpCodeRegister = OpCodeRegister;
-        LSUs.at(0).IN0 = ALU0;
-        LSUs.at(0).IN1 = ALU1;
-        LSUs.at(0).IMMEDIATE = IMMEDIATE;
-        LSUs.at(0).state = READY;*/
+        MISC_RV.push_back(ID_I_Inst);
     }
 
     I_State = Next;
@@ -540,13 +524,41 @@ void execute(){
     memoryWriteFlag = false;
 
     // FILLING IN THE RESERVATION STATIONS
-    if (ALUs.at(0)->state == IDLE) // LOAD IN ID_I_Inst into the ALU
+    if      (ALUs.at(0)->state == IDLE && ALU_RV.size() > 0) {
+        ALUs.at(0)->loadInInstruction(ALU_RV.back());// LOAD IN ID_I_Inst into the ALU
+        ALU_RV.pop_back();
+
+        ALUs.at(0)->state = READY;
+    }
+    else if (BUs.at(0)->state == IDLE && BU_RV.size() > 0) {
+
+        DecodedInstruction foo = BU_RV.back();
+        std::cout << "PRINTING FOO: ";
+        foo.print();
+        BUs.at(0)->loadInInstruction(foo);
+        BU_RV.pop_back();
+
+        BUs.at(0)->state = READY;
+    }
+    else if (LSUs.at(0)->state == IDLE && LSU_RV.size() > 0){
+        LSUs.at(0)->loadInInstruction(LSU_RV.back());
+        LSU_RV.pop_back();
+
+        LSUs.at(0)->state = READY;
+    }
+    else if (MISCs.at(0)->state == IDLE && MISC_RV.size() > 0){
+        MISCs.at(0)->loadInInstruction(MISC_RV.back());
+        MISC_RV.pop_back();
+
+        MISCs.at(0)->state = READY;
+    }
     // REPEAT FOR ALL OTHER EUs
 
     // Run all EUs
     for (ALU* a : ALUs) if (a->state == READY || a->state == RUNNING) a->cycle();
     for (BU*  b : BUs ) if (b->state == READY || b->state == RUNNING) b->cycle();
     for (LSU* l : LSUs) if (l->state == READY || l->state == RUNNING) l->cycle();
+    for (MISC* m : MISCs) if (m->state == READY || m->state == RUNNING) m->cycle();
   
     EX_State = Next;
 }
@@ -584,9 +596,6 @@ void complete(){
     bool foundOutputFlag = false;
     writeBackFlag = false;
 
-
-    for (LSU* l : LSUs) std::cout << "On Pointer: " << l->state << std::endl; 
-    std::cout << "On other side: " << LSUs.at(0)->state << std::endl;
     // ALU
     for (ALU* a : ALUs){
         if (a->state == DONE){
@@ -605,7 +614,8 @@ void complete(){
         if (b->state == DONE){
             if (b->branchFlag){
                 PC = b->OUT;
-                branchFlag = true;
+                branchFlag = b->branchFlag;
+                fushPipeline();
             }
             b->state = IDLE;            
             
@@ -626,6 +636,22 @@ void complete(){
             foundOutputFlag = true;
             break;
         }
+    }
+    // MISC
+    if (!foundOutputFlag) for (MISC* m : MISCs){
+        if (m->state == DONE){
+            C_OUT = m->OUT;
+            WBD = m->DEST_OUT;
+
+            writeBackFlag = m->writeBackFlag;
+            systemHaltFlag = m->haltFlag;
+
+            m->state = IDLE;
+
+            foundOutputFlag = true;
+            break;
+        }
+
     }
 
     C_State = Next;

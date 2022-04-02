@@ -27,9 +27,16 @@ class ExecutionUnit{
         state = IDLE;
     }
 
-    /*void multiplexer(){
-        return;
-    }*/
+    void loadInInstruction(DecodedInstruction inst){
+        this->OpCodeRegister = inst.OpCode;
+        this->DEST = inst.DEST;
+        this->IN0 = inst.IN0;
+        this->IN1 = inst.IN1;
+        this->IMMEDIATE = inst.IMM;
+        this->OUT = inst.OUT;
+
+        std::cout << "Successful load in!" << std::endl;
+    }
 
     // Every component must be able to cycle
     void cycle(){
@@ -156,7 +163,10 @@ class BU : public ExecutionUnit{
         // Set state to RUNNING
         state = RUNNING;
 
-        std::cout << "BU cycle called" << std::endl;
+        branchFlag = false;
+
+        //std::cout << "BU cycle called" << std::endl;
+        //std::cout << "DEST: " << DEST << " IN0: " << IN0 << " IN1: " << IN1 << " IMM: " << IMMEDIATE << " OUT: " << OUT << std::endl;
         switch(OpCodeRegister){
             case JMP:
             OUT = DEST;//registerFile[BUD];      // Again as in STO, is accessing the register file at this point illegal?
@@ -269,10 +279,14 @@ class LSU : public ExecutionUnit{
 
             case STO:
                 memoryData->at(DEST) = IN0;
+
+                this->writeBackFlag = false;
                 break;
 
             case STOI:                   // #####################
                 memoryData->at(IMMEDIATE) = IN0;
+
+                this->writeBackFlag = false;
                 break;
 
             default:
@@ -286,6 +300,9 @@ class LSU : public ExecutionUnit{
 };
 
 class MISC : public ExecutionUnit{
+   
+    public:
+        bool haltFlag = false;
 
     MISC(){
         typeOfEU = "MISC";
@@ -294,8 +311,42 @@ class MISC : public ExecutionUnit{
     void cycle(){
         // Set state to RUNNING
         state = RUNNING;
-        std::cout << "NOT IMPLEMENTED MISC EU YET" << std::endl;
+        this->haltFlag = false;
+        this->writeBackFlag = false;
         
+        switch(OpCodeRegister){
+            case HALT:                   // #####################
+                this->haltFlag = true;
+                break;
+
+            case NOP:
+                std::cout << "NOP EXECUTED!!!" << std::endl;
+                break;
+
+            case MV:
+                OUT = IN0;
+                
+                //MEM_writeBackFlag = true;
+                this->writeBackFlag = true;
+                break;
+            /*
+            case MVHI:
+                OUT = HI;
+                DEST_OUT = DEST;
+                this->writeBackFlag = true;
+                break;
+            case MVLO:
+                ALU_OUT = LO;
+                MEMD = ALUD;
+                MEM_writeBackFlag = true;
+                break;
+            */
+            default:
+                std::cout << "MISC does not understand this instruction!!" << std::endl;
+                break;
+        }
+
+    
         state = DONE;
-    }
+    }   
 };

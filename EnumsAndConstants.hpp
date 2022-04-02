@@ -48,7 +48,13 @@ enum Instruction {
      int IN1;       // Input 2                          (optional) 
      int IMM;       // Immediate                        (optional) 
      int OUT;       // Output for the instruction       (optional) 
+
+     void print(){
+         std::cout << "DEST: " << DEST << " IN0: " << IN0 << " IN1: " << IN1 << " IMM: " << IMM << " OUT: " << OUT << std::endl;
+     }
+     
  };
+
 
 /* Registers */
 #pragma region Registers
