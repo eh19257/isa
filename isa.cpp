@@ -99,13 +99,11 @@ std::array<int, SIZE_OF_DATA_MEMORY> dataMemory;
 std::array<ALU*, 2> ALUs = {new ALU(), new ALU()};
 std::array<BU*, 1> BUs = {new BU()};
 std::array<LSU*, 1> LSUs = {new LSU(&dataMemory)};
-std::array<MISC*, 1> MISCs = {new MISC()};
 
 /* Reservation Stations */
 std::vector<DecodedInstruction> ALU_RV;
 std::vector<DecodedInstruction> BU_RV;
 std::vector<DecodedInstruction> LSU_RV;
-std::vector<DecodedInstruction> MISC_RV;
 
 /* ISA Function headers */
 void fetch();
@@ -144,6 +142,7 @@ string WB_inst = "EMPTY";
 int numOfCycles = 1;        // Counts the number of cycles (stats at cycle 1 not cycle 0)
 int numOfBranches = 0;
 int numOfStalls = 0;        // Counts the number of times the pipeline stalls
+int numOfBubbles = 0;
 
 #pragma region debugging
 
@@ -229,7 +228,11 @@ void fushPipeline(){
     ALUs.at(1)->state = IDLE;
     BUs.at(0)->state = IDLE;
     LSUs.at(0)->state = IDLE;
-    MISCs.at(0)->state = IDLE;
+
+    // Clean RVs as well
+    ALU_RV.clear();
+    BU_RV.clear();
+    LSU_RV.clear();
 }
 
 // The main cycle of the processor
@@ -259,9 +262,9 @@ void cycle(){
                 
 
         cout << "\n\n" << endl;
-        outputAllMemory(amount_of_instruction_memory_to_output);
-
         if (PRINT_REGISTERS_FLAG) printRegisterFile(16);
+
+        if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
 
         std::cout << "---------- Cycle " << numOfCycles << " completed. ----------\n"<< std::endl;
         numOfCycles++;
@@ -269,7 +272,7 @@ void cycle(){
     std::cout << "Program has been halted\n" << std::endl;
 
     // Print the memory after the program has been ran
-    if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
+    //if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
     if (PRINT_STATS_FLAG) outputStatistics(numOfCycles);
 }
 
@@ -461,28 +464,26 @@ void issue(){
     #pragma endregion State Setup
 
     // ALUs
-    if (OpCodeRegister >= ADD && OpCodeRegister <= CMP){
+    if (ID_I_Inst.OpCode >= ADD && ID_I_Inst.OpCode <= CMP || ID_I_Inst.OpCode == MV){
         ALU_RV.push_back(ID_I_Inst);
         
     }
     // ALU
-    else if (OpCodeRegister >= AND && OpCodeRegister <= RSHFT) {
+    else if (ID_I_Inst.OpCode >= AND && ID_I_Inst.OpCode <= RSHFT) {
         ALU_RV.push_back(ID_I_Inst);
 
     }
     // BU
-    else if (OpCodeRegister >= JMP && OpCodeRegister <= BZ) {
+    else if (ID_I_Inst.OpCode >= JMP && ID_I_Inst.OpCode <= BZ || ID_I_Inst.OpCode == HALT || ID_I_Inst.OpCode == NOP) {
         BU_RV.push_back(ID_I_Inst);
 
     }
     // LSU
-    else if (OpCodeRegister >= LD && OpCodeRegister <= STOI) {
+    else if (ID_I_Inst.OpCode >= LD && ID_I_Inst.OpCode <= STOI) {
         LSU_RV.push_back(ID_I_Inst);
         
-    }
-    // MISC
-    else if (OpCodeRegister >= HALT && OpCodeRegister <= MVLO) {
-        MISC_RV.push_back(ID_I_Inst);
+    } else {
+        throw std::invalid_argument("Could no issue an unknown instruction: " + ID_I_Inst.OpCode);
     }
 
     I_State = Next;
@@ -546,11 +547,9 @@ void execute(){
 
         LSUs.at(0)->state = READY;
     }
-    else if (MISCs.at(0)->state == IDLE && MISC_RV.size() > 0){
-        MISCs.at(0)->loadInInstruction(MISC_RV.back());
-        MISC_RV.pop_back();
-
-        MISCs.at(0)->state = READY;
+    else {
+        cout << "Nothing to exectue" << endl;
+        numOfBubbles++;
     }
     // REPEAT FOR ALL OTHER EUs
 
@@ -558,7 +557,6 @@ void execute(){
     for (ALU* a : ALUs) if (a->state == READY || a->state == RUNNING) a->cycle();
     for (BU*  b : BUs ) if (b->state == READY || b->state == RUNNING) b->cycle();
     for (LSU* l : LSUs) if (l->state == READY || l->state == RUNNING) l->cycle();
-    for (MISC* m : MISCs) if (m->state == READY || m->state == RUNNING) m->cycle();
   
     EX_State = Next;
 }
@@ -617,6 +615,7 @@ void complete(){
                 branchFlag = b->branchFlag;
                 fushPipeline();
             }
+            systemHaltFlag = b->haltFlag;
             b->state = IDLE;            
             
             foundOutputFlag = true;
@@ -636,22 +635,6 @@ void complete(){
             foundOutputFlag = true;
             break;
         }
-    }
-    // MISC
-    if (!foundOutputFlag) for (MISC* m : MISCs){
-        if (m->state == DONE){
-            C_OUT = m->OUT;
-            WBD = m->DEST_OUT;
-
-            writeBackFlag = m->writeBackFlag;
-            systemHaltFlag = m->haltFlag;
-
-            m->state = IDLE;
-
-            foundOutputFlag = true;
-            break;
-        }
-
     }
 
     C_State = Next;

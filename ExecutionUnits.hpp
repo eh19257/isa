@@ -51,9 +51,6 @@ class ALU : public ExecutionUnit{
     
     ALU(){
         typeOfEU = "ALU";
-        //writeBackFlag = true;
-        //state = READY;//std::cout << state << std::endl;
-        //std::cout << state << std::endl;
     }
 
     void cycle(){
@@ -68,27 +65,19 @@ class ALU : public ExecutionUnit{
 
         switch(OpCodeRegister){
             case ADD:                   // #####################
-                OUT = IN0 + IN1;;   
-
-                //this->writeBackFlag = true;      
+                OUT = IN0 + IN1;;     
                 break;
 
             case ADDI:
                 OUT = IN0 + IMMEDIATE;
-
-                //this->writeBackFlag = true;
                 break;
 
             case SUB:
                 OUT = IN0 - IN1;
-
-                //this->writeBackFlag = true;
                 break;
 
             case MUL:
                 OUT = IN0 * IN1;
-
-                //this->writeBackFlag = true;
                 break;
 
             /*case MULO:
@@ -101,43 +90,45 @@ class ALU : public ExecutionUnit{
 
             case DIV:
                 OUT = (int) IN0 / IN1;
-
-                //this->writeBackFlag = true;
                 break;
 
             case CMP:
                 if      (IN0 < IN1) OUT = -1;
                 else if (IN0 > IN1) OUT =  1;
                 else                OUT =  0;
-            
-                //this->writeBackFlag = true;
                 break;
 
             case AND:
                 OUT = IN0 & IN1;
-
-                //this->writeBackFlag = true;
                 break;
             case OR:
                 OUT = IN0 | IN1;
-
-                //this->writeBackFlag = true;
                 break;
             case NOT:
                 OUT = ~IN0;
-
-                //this->writeBackFlag = true;
                 break;
             case LSHFT:
                 OUT = IN0 << IN1;
-
-                //this->writeBackFlag = true;
                 break;
             case RSHFT:
                 OUT = IN0 >> IN1;
-
-                //this->writeBackFlag = true;
                 break;
+            
+            case MV:
+                OUT = IN0;
+                break;
+            /*
+            case MVHI:
+                OUT = HI;
+                DEST_OUT = DEST;
+                this->writeBackFlag = true;
+                break;
+            case MVLO:
+                ALU_OUT = LO;
+                MEMD = ALUD;
+                MEM_writeBackFlag = true;
+                break;
+            */
             
             default:
                 throw std::invalid_argument("ALU cannot execute instruction: " + OpCodeRegister);
@@ -154,6 +145,7 @@ class BU : public ExecutionUnit{
 
     public:
         bool branchFlag = false;    // True is there is going to be a branch - default = no branch
+        bool haltFlag = false;
 
     BU(){
         typeOfEU = "BU";
@@ -217,6 +209,14 @@ class BU : public ExecutionUnit{
                 ///* STATS */ numOfBranches++;
                 //cout << "BRANCH" << endl; 
             }
+            break;
+        
+        case HALT:                   // #####################
+            this->haltFlag = true;
+            break;
+
+        case NOP:
+            std::cout << "NOP EXECUTED!!!" << std::endl;
             break;
         
         default:
@@ -315,32 +315,9 @@ class MISC : public ExecutionUnit{
         this->writeBackFlag = false;
         
         switch(OpCodeRegister){
-            case HALT:                   // #####################
-                this->haltFlag = true;
-                break;
+            
 
-            case NOP:
-                std::cout << "NOP EXECUTED!!!" << std::endl;
-                break;
-
-            case MV:
-                OUT = IN0;
-                
-                //MEM_writeBackFlag = true;
-                this->writeBackFlag = true;
-                break;
-            /*
-            case MVHI:
-                OUT = HI;
-                DEST_OUT = DEST;
-                this->writeBackFlag = true;
-                break;
-            case MVLO:
-                ALU_OUT = LO;
-                MEMD = ALUD;
-                MEM_writeBackFlag = true;
-                break;
-            */
+           
             default:
                 std::cout << "MISC does not understand this instruction!!" << std::endl;
                 break;
