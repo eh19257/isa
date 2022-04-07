@@ -298,32 +298,3 @@ class LSU : public ExecutionUnit{
         std::cout << "Does this even run?: " << this->state << std::endl;
     }
 };
-
-class MISC : public ExecutionUnit{
-   
-    public:
-        bool haltFlag = false;
-
-    MISC(){
-        typeOfEU = "MISC";
-    }
-
-    void cycle(){
-        // Set state to RUNNING
-        state = RUNNING;
-        this->haltFlag = false;
-        this->writeBackFlag = false;
-        
-        switch(OpCodeRegister){
-            
-
-           
-            default:
-                std::cout << "MISC does not understand this instruction!!" << std::endl;
-                break;
-        }
-
-    
-        state = DONE;
-    }   
-};

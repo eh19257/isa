@@ -64,6 +64,7 @@
         "xlocbuf": "cpp",
         "xlocmes": "cpp",
         "xtree": "cpp",
-        "deque": "cpp"
+        "deque": "cpp",
+        "queue": "cpp"
     }
 }

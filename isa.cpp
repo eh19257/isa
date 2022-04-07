@@ -62,15 +62,9 @@ int ID;
 //Instruction I_EX__OpCodeRegister = NOP;
 
 // EX/C registers
-int CD;
 
 // C/WB registers
 int C_OUT;
-
-// MEMORY ACCESS Registers
-int MEMD;                          // Destination address for the position in memory (STO operation) or the register in the register file (LD operation)
-int MEM_OUT;                            // Output of the memory (only used in load operations)
-
 
 // WRITE BACK registers
 int WBD;                           // Write back destination - stores the destination register for the memory in the memory output to be stored/held
@@ -184,8 +178,6 @@ void printRegisterFile(int maxReg){
     std::cout << "ALU1: " << ALU1 << std::endl;
     std::cout << "ALU_OUT: " << ALU_OUT << std::endl;
     std::cout << "ALUD: " << ALUD << std::endl;
-    std::cout << "\nMEMD: " << MEMD << std::endl;
-    std::cout << "MEM_OUT: " << MEM_OUT << std::endl;
     std::cout << "memoryReadFlag: " << memoryReadFlag << std::endl;
     std::cout << "memoryWriteFlag: " << memoryWriteFlag << std::endl;
     std::cout << "MEM_writeBackFlag: " <<MEM_writeBackFlag << std::endl;
@@ -235,40 +227,48 @@ void fushPipeline(){
     LSU_RV.clear();
 }
 
-// The main cycle of the processor
+
+// A single cycle of the processor
 void cycle(){
+    //if (numOfCycles == 26) outputAllMemory(amount_of_instruction_memory_to_output);
+    std::cout << "---------- Cycle " << numOfCycles << " starting ----------"<< std::endl;
+    //std::cout << "PC has current value: " << PC << std::endl;
+
+
+    // Non-pipelined 
+    //fetch(); decode(); issue(); execute(); complete(); writeBack();
+
+    // Pipelined
+    writeBack(); /*complete();*/ execute(); issue(); decode(); fetch();
+
+    cout << "\nCurrent instruction in the IF: " << IF_inst << endl;
+    cout << "Current instruction in the ID: " << ID_inst << endl;
+    cout << "Current instruction in the I:  " << I_inst << endl;
+    cout << "Current instruction in the EX: " << EX_inst << endl;
+    //cout << "Current instruciton in the C:  " << C_inst << endl;
+    cout << "Current instruction in the WB: " << WB_inst << endl;
+            
+
+    cout << "\n\n" << endl;
+    if (PRINT_REGISTERS_FLAG) printRegisterFile(16);
+    if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
+
+    std::cout << "---------- Cycle " << numOfCycles << " completed. ----------\n"<< std::endl;
+    numOfCycles++;
+}
+
+
+// Running the processor
+void run(){
     // Print memory before running the program
     if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
 
     while (!systemHaltFlag) {
-
-        //if (numOfCycles == 26) outputAllMemory(amount_of_instruction_memory_to_output);
-        std::cout << "---------- Cycle " << numOfCycles << " starting ----------"<< std::endl;
-        //std::cout << "PC has current value: " << PC << std::endl;
-
-
-        // Non-pipelined 
-        //fetch(); decode(); issue(); execute(); complete(); writeBack();
-
-        // Pipelined
-        writeBack(); complete(); execute(); issue(); decode(); fetch();
-
-        cout << "\nCurrent instruction in the IF: " << IF_inst << endl;
-        cout << "Current instruction in the ID: " << ID_inst << endl;
-        cout << "Current instruction in the I:  " << I_inst << endl;
-        cout << "Current instruction in the EX: " << EX_inst << endl;
-        cout << "Current instruciton in the C:  " << C_inst << endl;
-        cout << "Current instruction in the WB: " << WB_inst << endl;
-                
-
-        cout << "\n\n" << endl;
-        if (PRINT_REGISTERS_FLAG) printRegisterFile(16);
-
-        if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
-
-        std::cout << "---------- Cycle " << numOfCycles << " completed. ----------\n"<< std::endl;
-        numOfCycles++;
+        cycle();        
     }
+    // This last cycle() is to finish the final execution of the
+    cycle();
+
     std::cout << "Program has been halted\n" << std::endl;
 
     // Print the memory after the program has been ran
@@ -494,7 +494,7 @@ void issue(){
 void execute(){
     #pragma region State Setup
     // Prepare state for EX
-    if (C_State == Block || C_State == Current) {
+    if (WB_State == Block || WB_State == Current) {
         EX_State = Block;
         return;
     }
@@ -613,6 +613,7 @@ void complete(){
             if (b->branchFlag){
                 PC = b->OUT;
                 branchFlag = b->branchFlag;
+
                 fushPipeline();
             }
             systemHaltFlag = b->haltFlag;
@@ -640,53 +641,12 @@ void complete(){
     C_State = Next;
 }
 
-/*
-// Memory access part of the pipeline: LD and STO operations access the memory here. Branches set the PC here
-void memoryAccess(){
-    #pragma region State Setup
-    // Prepare State for MA
-    if (EX_State != Next) {
-        // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
-        MA_State = Empty;
-
-        // Debugging/GUI to show that the current instruction is empty
-        MA_inst = string("");
-
-        // increments stall count
-        numOfStalls += 1;
-        return;
-    } else {
-        // Else it can run
-        MA_State = Current;
-
-        // Debugging/GUI to show the current instr in the processor
-        MA_inst = EX_inst;
-    }
-    #pragma endregion State Setup
-
-    // IF BRANCH RETURN
-    // Passes the instruction destination register or address along
-    WBD = MEMD; 
-
-    // We also need to pass along the writeBackFlag
-    writeBackFlag = MEM_writeBackFlag;
-
-    // Check if this instruction needs to access memory
-         if (memoryReadFlag == true)  MEM_OUT = dataMemory[ALU_OUT];
-    else if (memoryWriteFlag == true) dataMemory[MEMD] = ALU_OUT; 
-    else                      MEM_OUT = ALU_OUT;            // Not really needed, just ensures that all instructions have a regular 5-stage pipeline. HERE we could drop it down ot 4 to speed tings up but that might cause some issues with the line.
-    
-    //std::cout << "Memory Accessed... ";
-    MA_State = Next;
-}
-*/
-
 // Data written back into register file: Write backs don't occur on STO or HALT (or NOP)
 void writeBack(){
     #pragma region State Setup
     // Prepare State for WB
     if (WB_State == Current); // Do not change anything about the state of this stage and let it continue to run
-    else if (C_State != Next) {
+    else if (EX_State != Next) {
         // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
         WB_State = Empty;
 
@@ -701,14 +661,65 @@ void writeBack(){
         WB_State = Current;
 
         // Debugging/GUI to show the current instr in the processor
-        WB_inst = C_inst;
+        WB_inst = EX_inst;
     }
     #pragma endregion State Setup
 
+    int writeOut;
+    int destination;
+
+    bool foundOutputFlag = false;
+    writeBackFlag = false;
+
+    // Unpack data from ALUs
+    for (ALU* a : ALUs){
+        if (a->state == DONE){
+            writeOut = a->OUT;
+            writeBackFlag = true;
+            destination = a->DEST_OUT;
+
+            a->state = IDLE;
+            
+            foundOutputFlag = true;
+            break;
+        }
+    }
+    // Unpack data from BUs
+    if (!foundOutputFlag) for (BU* b : BUs){
+        if (b->state == DONE){
+            if (b->branchFlag){
+                PC = b->OUT;
+                branchFlag = b->branchFlag;
+
+                fushPipeline();
+            }
+            systemHaltFlag = b->haltFlag;
+            b->state = IDLE;            
+            
+            foundOutputFlag = true;
+            break;
+        }
+    }
+    // Unpack data from LSUs
+    if (!foundOutputFlag) for (LSU* l : LSUs){
+        cout << "State of the LSU in writeBack(): " << l->state << endl;
+        if (l->state == DONE){
+            writeOut = l->OUT;
+            destination = l->DEST_OUT;
+            std::cout << "In writeBack(), writeBackFlag: " << l-> writeBackFlag << endl;
+            writeBackFlag = l->writeBackFlag;
+            l->state = IDLE;
+            
+            foundOutputFlag = true;
+            break;
+        }
+    }
+
+
     cout << "WRITE BACK" << endl;
     if (writeBackFlag) {
-        std::cout << "Write back to index: " << WBD << " with value: " << C_OUT << std::endl;
-        registerFile[WBD] = C_OUT;
+        std::cout << "Write back to index: " << destination << " with value: " << writeOut << std::endl;
+        registerFile[destination] = writeOut;
     }
     
     WB_State = Next;
@@ -792,7 +803,7 @@ int main(int argc, char** argv){
     }
 
     loadProgramIntoMemory(argv[1]);
-    cycle();
+    run();
 
     // Clean up some pointers
     for (ALU* a : ALUs) delete a;
