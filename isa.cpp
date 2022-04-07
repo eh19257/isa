@@ -364,15 +364,24 @@ void decode(){
     // Load the register values into the ALU's input
     if (splitCIR.size() > 1) {
         // Get set first/destination register
-        if      (splitCIR.at(1).substr(0 ,1).compare("r")  == 0 ) ALUD = strToRegister(splitCIR.at(1));
+        if      (splitCIR.at(1).substr(0 ,1).compare("r")  == 0 ) {
+            ID_I_Inst.rd = strToRegister(splitCIR.at(1)); 
+            ALUD = ID_I_Inst.rd;
+        }
         //else if (splitCIR.at(1).substr(0, 2).compare("FP") == 0)  ALUD = (FP_Register) stoi(splitCIR.at(1).substr(1, splitCIR.at(1).length()));
 
         if (splitCIR.size() > 2) {
-            if      (splitCIR.at(2).substr(0, 1).compare("r")  == 0 ) ALU0 = registerFile.at(strToRegister(splitCIR.at(2)));
+            if      (splitCIR.at(2).substr(0, 1).compare("r")  == 0 ) {
+                ID_I_Inst.rs0 = strToRegister(splitCIR.at(2));
+                ALU0 = registerFile.at(ID_I_Inst.rs0);
+            }
             //else if (splitCIR.at(2).substr(0, 2).compare("FP") == 0)  ALU_FP0 = (FP_Register) stoi(splitCIR.at(2).substr(1, splitCIR.at(2).length()));
             
             if (splitCIR.size() > 3) {
-                if      (splitCIR.at(3).substr(0,1).compare("r")  == 0 ) ALU1 = registerFile.at(strToRegister(splitCIR.at(3)));
+                if      (splitCIR.at(3).substr(0,1).compare("r")  == 0 ){
+                    ID_I_Inst.rs1 = strToRegister(splitCIR.at(3));
+                    ALU1 = registerFile.at(ID_I_Inst.rs1);
+                }
                 //else if (splitCIR.at(3).substr(0,1).compare("FP") == 0 ) ALU_FP1 = (FP_Register) stoi(splitCIR.at(3).substr(1, splitCIR.at(3).length()));
 
             }

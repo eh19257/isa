@@ -298,3 +298,19 @@ class LSU : public ExecutionUnit{
         std::cout << "Does this even run?: " << this->state << std::endl;
     }
 };
+
+
+// Hazard Dection Unit (HDU) - used for deteciton RAW hazards
+class HDU {
+    public:
+        std::vector<std::pair<Register, int>> RAW_Table;
+
+    // NEED RO IMPLEMENT INSTRUCTIOSTATE!!!!
+    InstructionState RAW(DecodedInstruction inst){
+
+    }
+
+    void loadInstInToRAW_Table(DecodedInstruction inst){
+        // Check if inst.rd is already in the table
+    }
+};

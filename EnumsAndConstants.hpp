@@ -41,19 +41,25 @@ enum Instruction {
 };
 
 /* Instruction Struct - used for passing entire instructions between Reservation stations and EUs */
- struct DecodedInstruction {
-     Instruction OpCode;
-     int DEST;      // Destination for the instruction  (optional) 
-     int IN0;       // Input 1
-     int IN1;       // Input 2                          (optional) 
-     int IMM;       // Immediate                        (optional) 
-     int OUT;       // Output for the instruction       (optional) 
+struct DecodedInstruction {
 
-     void print(){
-         std::cout << "DEST: " << DEST << " IN0: " << IN0 << " IN1: " << IN1 << " IMM: " << IMM << " OUT: " << OUT << std::endl;
-     }
+    Instruction OpCode;     // OP code of the instruction
+    
+    Register rd;    // Actual register used in instruction for destination       - Used to fight RAW hazards
+    Register rs0;   // Actual register used in instruction for source register 0 - Used to fight RAW hazards
+    Register rs1;   // Actual register used in instruction for source register 1 - Used to fight RAW hazards
+
+    int DEST;       // Destination for the instruction  (optional) 
+    int IN0;        // Input 1
+    int IN1;        // Input 2                          (optional) 
+    int IMM;        // Immediate                        (optional) 
+    int OUT;        // Output for the instruction       (optional) 
+
+    void print(){
+        std::cout << "DEST: " << DEST << " IN0: " << IN0 << " IN1: " << IN1 << " IMM: " << IMM << " OUT: " << OUT << std::endl;
+    }
      
- };
+};
 
 
 /* Registers */
