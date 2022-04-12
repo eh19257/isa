@@ -10,11 +10,16 @@ class ExecutionUnit{
     public:
         EUState state;
         std::string typeOfEU = "DefaultEU";
+        std::string Inst = "EMPTY";
 
         bool writeBackFlag = false;
 
         Instruction OpCodeRegister;
 
+        DecodedInstruction In;
+        DecodedInstruction Out;
+
+        /*
         int IN0;
         int IN1;
         int IMMEDIATE;
@@ -22,11 +27,13 @@ class ExecutionUnit{
         int DEST;
         int DEST_OUT;       // We need 2 destination registers - one between I/EX and one between EX/C
         int OUT;
+        */
     
     ExecutionUnit(){
         state = IDLE;
     }
 
+    /*
     void loadInInstruction(DecodedInstruction inst){
         this->OpCodeRegister = inst.OpCode;
         this->DEST = inst.DEST;
@@ -36,7 +43,7 @@ class ExecutionUnit{
         this->OUT = inst.OUT;
 
         std::cout << "Successful load in!" << std::endl;
-    }
+    }*/
 
     // Every component must be able to cycle
     void cycle(){
@@ -55,33 +62,34 @@ class ALU : public ExecutionUnit{
 
     void cycle(){
         // set State
-        state = RUNNING;
+        //state = RUNNING;
         this->writeBackFlag = true;
 
+        this->In.state = CURRENT;
         // Update the second destination register 
-        DEST_OUT = DEST;
+        Out.OUT = In.DEST;
 
         std::cout << "ALU cycle called" << std::endl;
 
         switch(OpCodeRegister){
             case ADD:                   // #####################
-                OUT = IN0 + IN1;;     
+                Out.OUT = In.IN0 + In.IN1;;     
                 break;
 
             case ADDI:
-                OUT = IN0 + IMMEDIATE;
+                Out.OUT = In.IN0 + In.IMM;
                 break;
 
             case SUB:
-                OUT = IN0 - IN1;
+                Out.OUT = In.IN0 - In.IN1;
                 break;
 
             case MUL:
-                OUT = IN0 * IN1;
+                Out.OUT = In.IN0 * In.IN1;
                 break;
 
             /*case MULO:
-                long int tempResult = (long int) IN0 * (long int) IN1;    // Not a register, only used to simulate a multiplication w/ overflow
+                long int tempResult = (long int) In.IN0 * (long int) In.IN1;    // Not a register, only used to simulate a multiplication w/ overflow
                 long int HImask = (long int) (pow(2, 32) - 1) << 32;        // Again, not a register, only used to simulated multiplication w/ overflow
 
                 HI = (int) ( (tempResult & HImask) >> 32);
@@ -89,38 +97,38 @@ class ALU : public ExecutionUnit{
                 break;*/
 
             case DIV:
-                OUT = (int) IN0 / IN1;
+                Out.OUT = (int) In.IN0 / In.IN1;
                 break;
 
             case CMP:
-                if      (IN0 < IN1) OUT = -1;
-                else if (IN0 > IN1) OUT =  1;
-                else                OUT =  0;
+                if      (In.IN0 < In.IN1) Out.OUT = -1;
+                else if (In.IN0 > In.IN1) Out.OUT =  1;
+                else                Out.OUT =  0;
                 break;
 
             case AND:
-                OUT = IN0 & IN1;
+                Out.OUT = In.IN0 & In.IN1;
                 break;
             case OR:
-                OUT = IN0 | IN1;
+                Out.OUT = In.IN0 | In.IN1;
                 break;
             case NOT:
-                OUT = ~IN0;
+                Out.OUT = ~In.IN0;
                 break;
             case LSHFT:
-                OUT = IN0 << IN1;
+                Out.OUT = In.IN0 << In.IN1;
                 break;
             case RSHFT:
-                OUT = IN0 >> IN1;
+                Out.OUT = In.IN0 >> In.IN1;
                 break;
             
             case MV:
-                OUT = IN0;
+                Out.OUT = In.IN0;
                 break;
             /*
             case MVHI:
-                OUT = HI;
-                DEST_OUT = DEST;
+                Out.OUT = HI;
+                Out.OUT = In.DEST;
                 this->writeBackFlag = true;
                 break;
             case MVLO:
@@ -135,7 +143,9 @@ class ALU : public ExecutionUnit{
                 break;
         }
 
-        state = DONE;
+        this->Out.state = NEXT;
+        this->In.state = EMPTY;
+        this->Inst = "";
     }
 };
 
@@ -153,15 +163,16 @@ class BU : public ExecutionUnit{
 
     void cycle(){
         // Set state to RUNNING
-        state = RUNNING;
+        
+        this->In.state = CURRENT;
 
         branchFlag = false;
 
         //std::cout << "BU cycle called" << std::endl;
-        //std::cout << "DEST: " << DEST << " IN0: " << IN0 << " IN1: " << IN1 << " IMM: " << IMMEDIATE << " OUT: " << OUT << std::endl;
+        //std::cout << "In.DEST: " << In.DEST << " In.IN0: " << In.IN0 << " In.IN1: " << In.IN1 << " IMM: " << In.IMM << " OUT: " << OUT << std::endl;
         switch(OpCodeRegister){
             case JMP:
-            OUT = DEST;//registerFile[BUD];      // Again as in STO, is accessing the register file at this point illegal?
+            Out.OUT = In.DEST;//registerFile[BUD];      // Again as in STO, is accessing the register file at this point illegal?
 
             branchFlag = true;
 
@@ -170,7 +181,7 @@ class BU : public ExecutionUnit{
             break;
 
         case JMPI:
-            OUT = OUT + DEST;//registerFile[BUD]; // WARNING ERROR HERE
+            Out.OUT = In.OUT + In.DEST;//registerFile[BUD]; // WARNING ERROR HERE
 
             branchFlag = true;
             
@@ -179,8 +190,8 @@ class BU : public ExecutionUnit{
             break;
 
         case BNE:
-            if (IN0 < 0) {
-                OUT = DEST;//PC = registerFile[BUD];
+            if (In.IN0 < 0) {
+                Out.OUT = In.DEST;//PC = registerFile[BUD];
                 
                 branchFlag = true;
 
@@ -190,8 +201,8 @@ class BU : public ExecutionUnit{
             break;
 
         case BPO:
-            if (IN0 > 0) {
-                OUT = DEST;//PC = registerFile[BUD];
+            if (In.IN0 > 0) {
+                Out.OUT = In.DEST;//PC = registerFile[BUD];
                 
                 branchFlag = true;
 
@@ -201,8 +212,8 @@ class BU : public ExecutionUnit{
             break;
 
         case BZ:
-            if (IN0 == 0) {
-                OUT = DEST;//PC = registerFile[BUD];
+            if (In.IN0 == 0) {
+                Out.OUT = In.DEST;//PC = registerFile[BUD];
                 
                 branchFlag = true;
 
@@ -223,7 +234,11 @@ class BU : public ExecutionUnit{
             throw std::invalid_argument("BU cannot execute instruction: " + OpCodeRegister);
         }
 
-        state = DONE;
+
+        this->Out.state = NEXT;
+        this->In.state = EMPTY;
+        //state = DONE;
+        this->Inst = "";
     }
 
 };
@@ -241,50 +256,51 @@ class LSU : public ExecutionUnit{
 
     void cycle(){
         // Set state to RUNNING
-        state = RUNNING;
+
+        this->In.state = CURRENT;
 
         std::cout << "LSU cycle called" << std::endl;
         switch(OpCodeRegister){
             case LD:
-                OUT = memoryData->at(IN0);
-                DEST_OUT = DEST;
+                Out.OUT = memoryData->at(In.IN0);
+                Out.DEST = In.DEST;
                 
                 this->writeBackFlag = true;
                 break;
 
             case LDD:
-                OUT = memoryData->at(IMMEDIATE);
-                DEST_OUT = DEST;
+                Out.OUT = memoryData->at(In.IMM);
+                Out.DEST = In.DEST;
 
                 this->writeBackFlag = true;
                 break;
 
             case LDI:                   // #####################
-                OUT = IMMEDIATE;
-                DEST_OUT = DEST;
+                Out.OUT = In.IMM;
+                Out.DEST = In.DEST;
         
                 this->writeBackFlag = true;
                 std::cout << "LDI IS RUNNING HERE!!! this->writeBackFlag: " << this->writeBackFlag << std::endl;
                 break;
 
             /*case LID:                   // BROKEN ################################
-                registerFile[ALUD] = dataMemory[dataMemory[IN0]];
+                registerFile[ALUD] = dataMemory[dataMemory[In.IN0]];
                 break;*/
             case LDA:
-                OUT = memoryData->at(IN0 + IN1);
-                DEST_OUT = DEST;
+                Out.OUT = memoryData->at(In.IN0 + In.IN1);
+                Out.DEST = In.DEST;
 
                 this->writeBackFlag = true;
                 break;
 
             case STO:
-                memoryData->at(DEST) = IN0;
+                memoryData->at(In.DEST) = In.IN0;
 
                 this->writeBackFlag = false;
                 break;
 
             case STOI:                   // #####################
-                memoryData->at(IMMEDIATE) = IN0;
+                memoryData->at(In.IMM) = In.IN0;
 
                 this->writeBackFlag = false;
                 break;
@@ -294,8 +310,13 @@ class LSU : public ExecutionUnit{
         }
 
         // Announce the fact that the instruction has been completed
-        this->state = DONE;
-        std::cout << "Does this even run?: " << this->state << std::endl;
+        //this->state = DONE;
+        //std::cout << "Does this even run?: " << this->state << std::endl;
+
+        this->Out.state = NEXT;
+        this->In.state = EMPTY;
+
+        this->Inst = "";
     }
 };
 
@@ -306,9 +327,9 @@ class HDU {
         std::vector<std::pair<Register, int>> RAW_Table;
 
     // NEED RO IMPLEMENT INSTRUCTIOSTATE!!!!
-    InstructionState RAW(DecodedInstruction inst){
+    /*InstructionState RAW(DecodedInstruction inst){
 
-    }
+    }*/
 
     void loadInstInToRAW_Table(DecodedInstruction inst){
         // Check if inst.rd is already in the table
