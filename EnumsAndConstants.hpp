@@ -61,10 +61,13 @@ struct NonDecodedInstruction {
     InstState state = EMPTY;
 
     std::string instruction = "";
+
+    int PC;
 };
 
 /* Instruction Struct - used for passing entire instructions between Reservation stations and EUs */
 struct DecodedInstruction {
+    std::string asString = "";
 
     InstState state = EMPTY;    // State of the instruction
 

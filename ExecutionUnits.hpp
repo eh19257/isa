@@ -9,41 +9,16 @@ class ExecutionUnit{
     
     public:
         EUState state;
-        std::string typeOfEU = "DefaultEU";
         std::string Inst = "EMPTY";
 
         bool writeBackFlag = false;
 
-        Instruction OpCodeRegister;
-
         DecodedInstruction In;
         DecodedInstruction Out;
-
-        /*
-        int IN0;
-        int IN1;
-        int IMMEDIATE;
-
-        int DEST;
-        int DEST_OUT;       // We need 2 destination registers - one between I/EX and one between EX/C
-        int OUT;
-        */
     
     ExecutionUnit(){
         state = IDLE;
     }
-
-    /*
-    void loadInInstruction(DecodedInstruction inst){
-        this->OpCodeRegister = inst.OpCode;
-        this->DEST = inst.DEST;
-        this->IN0 = inst.IN0;
-        this->IN1 = inst.IN1;
-        this->IMMEDIATE = inst.IMM;
-        this->OUT = inst.OUT;
-
-        std::cout << "Successful load in!" << std::endl;
-    }*/
 
     // Every component must be able to cycle
     void cycle(){
@@ -57,7 +32,7 @@ class ALU : public ExecutionUnit{
     public:
     
     ALU(){
-        typeOfEU = "ALU";
+
     }
 
     void cycle(){
@@ -67,11 +42,11 @@ class ALU : public ExecutionUnit{
 
         this->In.state = CURRENT;
         // Update the second destination register 
-        Out.OUT = In.DEST;
+        Out.DEST = In.DEST;
 
         std::cout << "ALU cycle called" << std::endl;
 
-        switch(OpCodeRegister){
+        switch(In.OpCode){
             case ADD:                   // #####################
                 Out.OUT = In.IN0 + In.IN1;;     
                 break;
@@ -139,13 +114,15 @@ class ALU : public ExecutionUnit{
             */
             
             default:
-                throw std::invalid_argument("ALU cannot execute instruction: " + OpCodeRegister);
+                throw std::invalid_argument("ALU cannot execute instruction: " + In.OpCode);
                 break;
         }
 
         this->Out.state = NEXT;
         this->In.state = EMPTY;
-        this->Inst = "";
+
+        // Debugging/GUI
+        //this->Inst = "";
     }
 };
 
@@ -158,7 +135,6 @@ class BU : public ExecutionUnit{
         bool haltFlag = false;
 
     BU(){
-        typeOfEU = "BU";
     }
 
     void cycle(){
@@ -168,9 +144,7 @@ class BU : public ExecutionUnit{
 
         branchFlag = false;
 
-        //std::cout << "BU cycle called" << std::endl;
-        //std::cout << "In.DEST: " << In.DEST << " In.IN0: " << In.IN0 << " In.IN1: " << In.IN1 << " IMM: " << In.IMM << " OUT: " << OUT << std::endl;
-        switch(OpCodeRegister){
+        switch(In.OpCode){
             case JMP:
             Out.OUT = In.DEST;//registerFile[BUD];      // Again as in STO, is accessing the register file at this point illegal?
 
@@ -231,14 +205,15 @@ class BU : public ExecutionUnit{
             break;
         
         default:
-            throw std::invalid_argument("BU cannot execute instruction: " + OpCodeRegister);
+            throw std::invalid_argument("BU cannot execute instruction: " + In.OpCode);
         }
 
 
         this->Out.state = NEXT;
         this->In.state = EMPTY;
-        //state = DONE;
-        this->Inst = "";
+        
+        // Debugging/GUI
+        //this->Inst = "";
     }
 
 };
@@ -251,7 +226,6 @@ class LSU : public ExecutionUnit{
 
     LSU(std::array<int, SIZE_OF_DATA_MEMORY>* memData){
         memoryData = memData;
-        typeOfEU = "LSU";
     }
 
     void cycle(){
@@ -260,7 +234,7 @@ class LSU : public ExecutionUnit{
         this->In.state = CURRENT;
 
         std::cout << "LSU cycle called" << std::endl;
-        switch(OpCodeRegister){
+        switch(In.OpCode){
             case LD:
                 Out.OUT = memoryData->at(In.IN0);
                 Out.DEST = In.DEST;
@@ -306,17 +280,16 @@ class LSU : public ExecutionUnit{
                 break;
 
             default:
-                throw std::invalid_argument("LSU cannot execute instruction: " + OpCodeRegister);
+                throw std::invalid_argument("LSU cannot execute instruction: " + In.OpCode);
         }
 
         // Announce the fact that the instruction has been completed
-        //this->state = DONE;
-        //std::cout << "Does this even run?: " << this->state << std::endl;
 
         this->Out.state = NEXT;
         this->In.state = EMPTY;
 
-        this->Inst = "";
+        // Debugging/GUI
+        //this->Inst = "";
     }
 };
 

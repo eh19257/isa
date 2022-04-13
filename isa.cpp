@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <thread>
 #include <queue>
+//#include <bits/stdc++.h>
 
 //#include "EnumsAndConstants.hpp"
 #include "ExecutionUnits.hpp"
@@ -119,13 +120,13 @@ void printRegisterFile(int maxReg);
 void outputStatistics(int numOfCycles);
 
 /* Debugging/GUI for showing whch Instruction is in which stage */
-string IF_inst = "EMPTY";
-string ID_inst = "EMPTY";
-string I_inst = "EMPTY";
-string EX_inst = "EMPTY";
-string C_inst = "EMPTY";
-string MA_inst = "EMPTY";
-string WB_inst = "EMPTY";
+string IF_inst = "";
+string ID_inst = "";
+string I_inst = "";
+string EX_inst = "";
+//string C_inst = "";
+//string MA_inst = "";
+string WB_inst = "";
 
 
 /* Stats variables */
@@ -319,14 +320,14 @@ void decode(){
     #pragma region State Setup
     // State managing for IF_ID_Inst and ID_I_Inst
     
-    if      (ID_I_Inst.state == BLOCK || ID_I_Inst.state == CURRENT){
+    if (ID_I_Inst.state == BLOCK || ID_I_Inst.state == CURRENT){
         // If this happens then we cannot run the decode as there are no places in which the result can be stored
         IF_ID_Inst.state = BLOCK;
 
         numOfStalls += 1;
         return;
     } 
-    else if (ID_I_Inst.state == NEXT || ID_I_Inst.state == EMPTY){
+    else if (ID_I_Inst.state == EMPTY){// || ID_I_Inst.state == EMPTY){
         // If this happens then decoded is able to be ran aslong as IF_ID_Inst contains an instruction
 
         if (IF_ID_Inst.state == NEXT){
@@ -342,6 +343,8 @@ void decode(){
             ID_inst = "";
             return;
         }        
+    } else {
+        cout << "ID_I_Inst has gone mad - illegal state as it's NEXT" << endl;
     }
     #pragma endregion State Setup
 
@@ -353,7 +356,7 @@ void decode(){
     // Load the register values into the ALU's input
     if (splitCIR.size() > 1) {
         // Get set first/destination register
-        if      (splitCIR.at(1).substr(0 ,1).compare("r")  == 0 ) {
+        if (splitCIR.at(1).substr(0 ,1).compare("r")  == 0 ) {
             ID_I_Inst.rd = strToRegister(splitCIR.at(1)); 
 
             ID_I_Inst.DEST = ID_I_Inst.rd;
@@ -432,13 +435,19 @@ void decode(){
     //ID_I_Inst.IN0 = ALU0;
     //ID_I_Inst.IN1 = ALU1;
     //ID_I_Inst.IMM = IMMEDIATE;
-    ID_I_Inst.OUT = PC;     // It is only set to the PC for the single instruction JMPI (indexed JMP)
+
+    // SUPER IMPORTANT - THIS IS THE PREVIOUS VALUE OF THE PC TO USE THE CORRECT OLD VALUE OF IT AND NOT THE NEW VALUE
+    ID_I_Inst.OUT = IF_ID_Inst.PC;     // It is only set to the PC for the single instruction JMPI (indexed JMP)
 
     // IF_ID has now been fully used by the ID stage and the output of decode() is now being held in ID_I which makes ready for the NEXT stage and IF_ID has now been used up making it EMPTY
     IF_ID_Inst.state = EMPTY;
     ID_I_Inst.state = NEXT;
 
-    //ID_State = Next;
+    // Debuggin/GUI
+    ID_I_Inst.asString = IF_ID_Inst.instruction;
+
+    
+    std::cout << "Instruction " << ID_I_Inst.asString << " in ID decoded: "; ID_I_Inst.print();
 }
 
 
@@ -448,12 +457,16 @@ void issue(){
     // State managing for ID_I and I_RVs
     // This is different as we need to check if 
 
-    if (ID_I_Inst.state == EMPTY || ID_I_Inst.state == CURRENT) {
-        // Do nothing and unload RVS
-
+    if (ID_I_Inst.state == CURRENT) {
         // Note: here it shouldnt be possible for ID_I_Inst to have a current state but we deal with it like this anyway
+    
+    } else if (ID_I_Inst.state == EMPTY) {
+        cout << "I is empty" << endl;
+
+        // Debugging/GUI
+        I_inst = "";
     }
-    else if (ID_I_Inst.state == NEXT || ID_I_Inst.state == BLOCK){
+    else if (ID_I_Inst.state == NEXT){//|| ID_I_Inst.state == BLOCK){
 
         I_inst = ID_inst;
         
@@ -472,8 +485,7 @@ void issue(){
 
                 ID_I_Inst.state = EMPTY;
 
-                cout << "instruction loaded into ALU_RV" << endl;
-                ID_I_Inst.print();
+                cout << "Loaded instruction " << ID_I_Inst.asString << " into ALU_RV. Decoded instruction: "; ID_I_Inst.print();
             }            
         }
         // BU
@@ -490,8 +502,8 @@ void issue(){
                 BU_RV.push_back(ID_I_Inst);
 
                 ID_I_Inst.state = EMPTY;
-                cout << "instruction loaded into BU_RV" << endl;
-                ID_I_Inst.print();
+                
+                cout << "Loaded instruction " << ID_I_Inst.asString << " into BU_RV. Decoded instruction: "; ID_I_Inst.print();
             }       
         }
 
@@ -510,13 +522,15 @@ void issue(){
 
                 ID_I_Inst.state = EMPTY;
 
-                cout << "instruction loaded into LSU_RV: ";
-                ID_I_Inst.print();
+                cout << "Loaded instruction " << ID_I_Inst.asString << " into LSU_RV. Decoded instruction: "; ID_I_Inst.print();
             }
         }  
         else {
             throw std::invalid_argument("Could no issue an unknown instruction: " + ID_I_Inst.OpCode);
         }
+    } else {
+        // BLOCKING
+        cout << "INSTRUCTION IS CURRENTLY BLOCKING IN ID/I!!!" << endl;
     }
 
 
@@ -528,22 +542,23 @@ void issue(){
             
             continue;
 
-        } else if (a->In.state == NEXT || a->In.state == EMPTY){
+        } else if (a->In.state == EMPTY ){//|| a->In.state == NEXT){
             
             // If the ALU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
             if (!ALU_RV.empty()){
                 if (ALU_RV.back().state == NEXT){
                     // If the instruction in the RV is ready to be NEXT, then it is loaded into the ALU
-                    a->In = ALU_RV.back();
-                    a->Inst = I_inst;
-                    ALU_RV.pop_back();
-                } else {
 
-                    // Debugging purposes
-                    a->Inst = "";
+                    // LOAD INTO ALU
+                    a->In = ALU_RV.back();
+                    ALU_RV.pop_back();
+
+                    cout << "Instruction " << a->In.asString << " loaded into the ALU" << (int) (std::find(ALUs.begin(), ALUs.end(), a) - ALUs.begin()) << ". Decoded instruction: "; a->In.print();
                 }
             }
-        } 
+        } else {
+            cout << "Instruction in the ALU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
+        }
     }
 
     // If the BUs are free, then we can off load the RVs into the BUs
@@ -553,22 +568,22 @@ void issue(){
             
             continue;
 
-        } else if (b->In.state == NEXT || b->In.state == EMPTY){
+        } else if (b->In.state == EMPTY){// || b->In.state == NEXT){
             
             // If the BU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
             if (!BU_RV.empty()){
                 if (BU_RV.back().state == NEXT){
+                    
                     // If the instruction in the RV is ready to be NEXT, then it is loaded into the BU
-                    b->In = BU_RV.back();
-                    b->Inst = I_inst;
-                    BU_RV.pop_back();
-                } else {
 
-                    // Debugging purposes
-                    b->Inst = "";
+                    // LOAD INTO BU
+                    b->In = BU_RV.back();
+                    BU_RV.pop_back();
                 }
             }
-        } 
+        } else {
+            cout << "Instruction in the BU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
+        }
     }
 
     // If the LSUs are free, then we can off load the RVs into the LSUs
@@ -578,30 +593,24 @@ void issue(){
             
             continue;
 
-        } else if (l->In.state == NEXT || l->In.state == EMPTY){
+        } else if (l->In.state == EMPTY){//|| l->In.state == NEXT){
             
             // If the LSU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
             if (!LSU_RV.empty()){
                 if (LSU_RV.back().state == NEXT){
-                    // If the instruction in the RV is ready to be NEXT, then it is loaded into the LSU
-                    l->In = LSU_RV.back();
-                    l->Inst = I_inst;
-                    LSU_RV.pop_back();
-                } else {
 
-                    // Debugging purposes
-                    l->Inst = "";
+                    // If the instruction in the RV is ready to be NEXT, then it is loaded into the LSU
+                    
+                    // LOAD INTO LSU
+                    l->In = LSU_RV.back();
+                    LSU_RV.pop_back();
                 }
             }
-        } 
+        } else {
+            cout << "Instruction in the LSU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
+        }
     }
 
-
-
-
-
-
-    //I_State = Next;
     ID_I_Inst.state = EMPTY;
     //I_EX_Inst.state = NEXT;
 }
@@ -609,139 +618,35 @@ void issue(){
 
 // Executes the current instruction
 void execute(){
-    /*
-    #pragma region State Setup
-    // State managing for IF_ID_Inst and ID_I_Inst
-    
-    if      (EX_WB_Inst.state == BLOCK || EX_WB_Inst.state == CURRENT){
-        // If this happens then we cannot run the decode as there are no places in which the result can be stored
-        I_EX_Inst.state = BLOCK;
-
-        numOfStalls += 1;
-        return;
-    } 
-    else if (EX_WB_Inst.state == NEXT || EX_WB_Inst.state == EMPTY){
-        // If this happens then decoded is able to be ran aslong as IF_ID_Inst contains an instruction
-
-        if (I_EX_Inst.state == NEXT){
-            
-            I_EX_Inst.state = CURRENT;
-            
-            // Debugging/GUI
-            EX_inst = I_inst;
-        }
-        else{
-            // Decode() cannot be run with no inputs and so we return
-
-            EX_inst = string("");
-            return;
-        }        
-    }
-    #pragma endregion State Setup
-    */
-
-/*
-    // Set flags to false
-    MEM_writeBackFlag = false;
-    memoryReadFlag = false;
-    memoryWriteFlag = false;
-
-    // FILLING IN THE RESERVATION STATIONS
-    if      (ALUs.at(0)->state == IDLE && ALU_RV.size() > 0) {
-        ALUs.at(0)->In = ALU_RV.back();// LOAD IN ID_I_Inst into the ALU
-        ALU_RV.pop_back();
-
-        ALUs.at(0)->state = READY;
-    }
-    else if (BUs.at(0)->state == IDLE && BU_RV.size() > 0) {
-
-        DecodedInstruction foo = BU_RV.back();
-        std::cout << "PRINTING FOO: ";
-        foo.print();
-        BUs.at(0)->In = foo;
-        BU_RV.pop_back();
-
-        BUs.at(0)->state = READY;
-    }
-    else if (LSUs.at(0)->state == IDLE && LSU_RV.size() > 0){
-        LSUs.at(0)->In = LSU_RV.back();
-        LSU_RV.pop_back();
-
-        LSUs.at(0)->state = READY;
-    }
-    else {
-        cout << "Nothing to exectue" << endl;
-        numOfBubbles++;
-    }
-    // REPEAT FOR ALL OTHER EUs
-
-    */
     // Run all EUs
     for (ALU* a : ALUs) {
-        if ( (a->Out.state == EMPTY || a->Out.state == NEXT) && (a->In.state == NEXT || a->In.state == CURRENT) ) a->cycle();
+        if ( (a->Out.state == EMPTY || a->Out.state == NEXT) && (a->In.state == NEXT || a->In.state == CURRENT) ) {
+            a->Inst = I_inst;
+            a->cycle();
+        }
         else a->Inst = "";
     }
     for (BU*  b : BUs ) {
-        if ( (b->Out.state == EMPTY || b->Out.state == NEXT) && (b->In.state == NEXT || b->In.state == CURRENT) ) b->cycle();
+        if ( (b->Out.state == EMPTY || b->Out.state == NEXT) && (b->In.state == NEXT || b->In.state == CURRENT) ) {
+            b->Inst = I_inst;
+            b->cycle();
+        }
         else b->Inst = "";
     }
     for (LSU* l : LSUs) {
-        if ( (l->Out.state == EMPTY || l->Out.state == NEXT) && (l->In.state == NEXT || l->In.state == CURRENT) ) l->cycle();
+        if ( (l->Out.state == EMPTY || l->Out.state == NEXT) && (l->In.state == NEXT || l->In.state == CURRENT) ) {
+            l->Inst = I_inst;
+            l->cycle();
+        }
         else l->Inst = "";
     } 
-  
-    //EX_State = Next;
-    //I_EX_Inst.state = EMPTY;
-    //EX_WB_Inst.state = NEXT;
 }
 
 // Data written back into register file: Write backs don't occur on STO or HALT (or NOP)
 void writeBack(){
-    /*
-    #pragma region State Setup
-    
-    // We only need to check the previous out registers in the EUs as once this is done the instruction is complete
-    if (EX_WB_Inst.state == NEXT){
-        
-        EX_WB_Inst.state = CURRENT;
-        
-        // Debugging/GUI
-        WB_inst = EX_inst;
-    }
-    else{
-        // Decode() cannot be run with no inputs and so we return
+  
+    WB_inst = "";
 
-        WB_inst = string("");
-        return;
-    }        
-    #pragma endregion State Setup
-    */
-
-    /*
-    #pragma region State Setup
-    // Prepare State for WB
-    if (WB_State == Current); // Do not change anything about the state of this stage and let it continue to run
-    else if (EX_State != Next) {
-        // If IF is not ready to move on, then ID cannot progress (i.e. it is empty)
-        WB_State = Empty;
-
-        // Debugging/GUI to show that the current instruction is empty
-        WB_inst = string("");
-
-        // increments stall count
-        numOfStalls += 1;
-        return;
-    } else {
-        // Else it can run
-        WB_State = Current;
-
-        // Debugging/GUI to show the current instr in the processor
-        WB_inst = EX_inst;
-    }
-    #pragma endregion State Setup
-    */
-
-   WB_inst = "";
     // unpack data from each ALU if there exists an instruciton in their output 
     for (ALU* a : ALUs){
         if (a->Out.state == NEXT){// || a->Out.state == BLOCK || a->Out.state == CURRENT){
@@ -763,19 +668,20 @@ void writeBack(){
         if (b->Out.state == NEXT){// || b->Out.state == BLOCK || b->Out.state == CURRENT){
             // It should be illegal for the instruction to BLOCK or be CURRENTLY running here but if it does then we would just ignore that write it back
             
+            // Set halt flag here
+            systemHaltFlag = b->haltFlag;
+
             if (b->branchFlag) {
                 PC = b->Out.OUT;
 
                 flushPipeline();
-                
-                //registerFile[b->Out.DEST] = b->Out.OUT;
-                std::cout << "Write back to index: " << b->Out.DEST << " with value: " << b->Out.OUT << std::endl;
-
-                WB_inst = b->Inst;
+                std::cout << "@Write back. PC now equals: " << PC << std::endl;
             }
-
+             
             b->Out.state = EMPTY;
 
+            // Debugging/GUI
+            WB_inst = b->Inst;
         }
     }
 
@@ -791,67 +697,11 @@ void writeBack(){
 
             l->Out.state = EMPTY;
 
+            // Debugging/GUI
             WB_inst = l->Inst;
         }
     }
 
-    /*
-
-    // Unpack data from ALUs
-    for (ALU* a : ALUs){
-        if (a->state == DONE){
-            writeOut = a->OUT;
-            writeBackFlag = true;
-            destination = a->DEST_OUT;
-
-            a->state = IDLE;
-            
-            foundOutputFlag = true;
-            break;
-        }
-    }
-    // Unpack data from BUs
-    if (!foundOutputFlag) for (BU* b : BUs){
-        if (b->state == DONE){
-            if (b->branchFlag){
-                PC = b->OUT;
-                branchFlag = b->branchFlag;
-
-                fushPipeline();
-            }
-            systemHaltFlag = b->haltFlag;
-            b->state = IDLE;            
-            
-            foundOutputFlag = true;
-            break;
-        }
-    }
-    // Unpack data from LSUs
-    if (!foundOutputFlag) for (LSU* l : LSUs){
-        cout << "State of the LSU in writeBack(): " << l->state << endl;
-        if (l->state == DONE){
-            writeOut = l->OUT;
-            destination = l->DEST_OUT;
-            std::cout << "In writeBack(), writeBackFlag: " << l-> writeBackFlag << endl;
-            writeBackFlag = l->writeBackFlag;
-            l->state = IDLE;
-            
-            foundOutputFlag = true;
-            break;
-        }
-    }
-
-
-    cout << "WRITE BACK" << endl;
-    if (writeBackFlag) {
-        std::cout << "Write back to index: " << destination << " with value: " << writeOut << std::endl;
-        registerFile[destination] = writeOut;
-    }
-    
-    //WB_State = Next;
-    EX_WB_Inst.state = EMPTY;
-
-    */
 }
 
 #pragma endregion F/D/E/M/W/

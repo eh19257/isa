@@ -1,4 +1,4 @@
-LDI r0 0 
+LDI r0 0
 LDI r1 2
 LDI r2 1337
 LDI r3 16
