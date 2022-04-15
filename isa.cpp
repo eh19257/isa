@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <thread>
 #include <queue>
+#include <deque>
 //#include <bits/stdc++.h>
 
 //#include "EnumsAndConstants.hpp"
@@ -85,16 +86,18 @@ bool branchFlag = false;                // Used to tell the fetch stage that we 
 std::array<std::string, SIZE_OF_INSTRUCTION_MEMORY> instrMemory;
 std::array<int, SIZE_OF_DATA_MEMORY> dataMemory;
 
+/* Hazard Detection Units */
+HDU* HazardDetectioUnit = new HDU();
+
 /* Execution Units*/
-//std::array<ExecutionUnit, 4> EUs = {ALU(), ALU(), BU(), LSU()};
-std::array<ALU*, 2> ALUs = {new ALU(), new ALU()};
-std::array<BU*, 1> BUs = {new BU()};
-std::array<LSU*, 1> LSUs = {new LSU(&dataMemory)};
+std::array<ALU*, 2> ALUs = {new ALU(HazardDetectioUnit), new ALU(HazardDetectioUnit)};
+std::array<BU*, 1> BUs = {new BU(HazardDetectioUnit)};
+std::array<LSU*, 1> LSUs = {new LSU(HazardDetectioUnit, &dataMemory)};
 
 /* Reservation Stations */
-std::vector<DecodedInstruction> ALU_RV;
-std::vector<DecodedInstruction> BU_RV;
-std::vector<DecodedInstruction> LSU_RV;
+std::deque<DecodedInstruction> ALU_RV;
+std::deque<DecodedInstruction> BU_RV;
+std::deque<DecodedInstruction> LSU_RV;
 
 /* ISA Function headers */
 void fetch();
@@ -223,9 +226,9 @@ void flushPipeline(){
     LSUs.at(0)->In.state = EMPTY;
 
     // Clean RVs as well
-    ALU_RV.clear();
-    BU_RV.clear();
-    LSU_RV.clear();
+    ALU_RV = std::deque<DecodedInstruction>();
+    BU_RV = std::deque<DecodedInstruction>();
+    LSU_RV = std::deque<DecodedInstruction>();
 }
 
 
@@ -246,12 +249,26 @@ void cycle(){
     cout << "Current instruction in the ID: " << ID_inst << endl;
     cout << "Current instruction in the I:  " << I_inst << endl;
     cout << "Current instruction in ALU0: " << ALUs.at(0)->Inst << "\tALU1: " << ALUs.at(1)->Inst << "\tBU: " << BUs.at(0)->Inst << "\tLSU: " << LSUs.at(0)->Inst << endl;
-    //cout << "Current instruciton in the C:  " << C_inst << endl;
     cout << "Current instruction in the WB: " << WB_inst << endl;
             
+    cout << "\n\tALU_RV\t\tBU_RV \t\tLSU_RV" << endl;
+    for (int i = 0; i < MAX_RV_SIZE; i++){
+        cout << i << "\t";
+        if (ALU_RV.size() <= i) cout << "\t\t";
+        else cout << ALU_RV.at(i).asString << "\t";
+
+        if (BU_RV.size() <= i) cout << "\t\t";
+        else cout << BU_RV.at(i).asString << "\t";
+    
+        if (LSU_RV.size() <= i) cout << "\t\t";
+        else cout << LSU_RV.at(i).asString << "\t";
+        
+        cout << endl;
+    }
+    //cou
 
     cout << "\n\n" << endl;
-    if (PRINT_REGISTERS_FLAG) printRegisterFile(16);
+    if (PRINT_REGISTERS_FLAG) printRegisterFile(8);
     if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
 
     std::cout << "---------- Cycle " << numOfCycles << " completed. ----------\n"<< std::endl;
@@ -264,8 +281,10 @@ void run(){
     // Print memory before running the program
     if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
 
+    std::string foo;
     while (!systemHaltFlag) {
         cycle();        
+        std::cin >> foo;
     }
     // This last cycle() is to finish the final execution of the
     cycle();
@@ -333,9 +352,6 @@ void decode(){
         if (IF_ID_Inst.state == NEXT){
             
             IF_ID_Inst.state = CURRENT;
-            
-            // Debugging/GUI
-            ID_inst = IF_inst;
         }
         else{
             // Decode() cannot be run with no inputs and so we return
@@ -361,6 +377,9 @@ void decode(){
 
             ID_I_Inst.DEST = ID_I_Inst.rd;
             //ALUD = ID_I_Inst.rd;
+        } else {
+            // If the register takes an immediate and not a register then it'll put an X in this spot so it doesnt cause any weird issues with hazard detection
+            ID_I_Inst.DEST = X;
         }
         //else if (splitCIR.at(1).substr(0, 2).compare("FP") == 0)  ALUD = (FP_Register) stoi(splitCIR.at(1).substr(1, splitCIR.at(1).length()));
 
@@ -370,6 +389,9 @@ void decode(){
 
                 ID_I_Inst.IN0 = registerFile.at(ID_I_Inst.rs0);
                 //ALU0 = registerFile.at(ID_I_Inst.rs0);
+            } else {
+                // If the register takes an immediate and not a register then it'll put an X in this spot so it doesnt cause any weird issues with hazard detection
+                ID_I_Inst.IN0 = X;
             }
             //else if (splitCIR.at(2).substr(0, 2).compare("FP") == 0)  ALU_FP0 = (FP_Register) stoi(splitCIR.at(2).substr(1, splitCIR.at(2).length()));
             
@@ -379,12 +401,18 @@ void decode(){
 
                     ID_I_Inst.IN1 = registerFile.at(ID_I_Inst.rs1);
                     //ALU1 = registerFile.at(ID_I_Inst.rs1);
+                } else {
+                     // If the register takes an immediate and not a register then it'll put an X in this spot so it doesnt cause any weird issues with hazard detection
+                    ID_I_Inst.IN1 = X;
                 }
                 //else if (splitCIR.at(3).substr(0,1).compare("FP") == 0 ) ALU_FP1 = (FP_Register) stoi(splitCIR.at(3).substr(1, splitCIR.at(3).length()));
 
             }
         }
     }
+
+    // SET WRTEBACK TO TRUE AS DEFAULT
+    ID_I_Inst.IsWriteBack = true;
 
     // if statement for decoding all instructions
          if (splitCIR.at(0).compare("ADD")  == 0) ID_I_Inst.OpCode = ADD;
@@ -405,8 +433,8 @@ void decode(){
     else if (splitCIR.at(0).compare("LID")  == 0) ID_I_Inst.OpCode = LID;
     else if (splitCIR.at(0).compare("LDA")  == 0) ID_I_Inst.OpCode = LDA;
     
-    else if (splitCIR.at(0).compare("STO")  == 0) { ID_I_Inst.OpCode = STO; ID_I_Inst.DEST = registerFile.at(strToRegister(splitCIR.at(1)));}
-    else if (splitCIR.at(0).compare("STOI") == 0) { ID_I_Inst.OpCode = STOI; ID_I_Inst.IMM = stoi(splitCIR.at(1)); }
+    else if (splitCIR.at(0).compare("STO")  == 0) { ID_I_Inst.OpCode = STO; ID_I_Inst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); ID_I_Inst.IsWriteBack = false; }
+    else if (splitCIR.at(0).compare("STOI") == 0) { ID_I_Inst.OpCode = STOI; ID_I_Inst.IMM = stoi(splitCIR.at(1)); ID_I_Inst.IsWriteBack = false; }
 
     else if (splitCIR.at(0).compare("AND")  == 0) ID_I_Inst.OpCode = AND;
     else if (splitCIR.at(0).compare("OR")   == 0) ID_I_Inst.OpCode = OR;
@@ -414,37 +442,32 @@ void decode(){
     else if (splitCIR.at(0).compare("LSHFT")== 0) ID_I_Inst.OpCode = LSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
     else if (splitCIR.at(0).compare("RSHFT")== 0) ID_I_Inst.OpCode = RSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
 
-    else if (splitCIR.at(0).compare("JMP")  == 0) { ID_I_Inst.OpCode = JMP; ID_I_Inst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); }
-    else if (splitCIR.at(0).compare("JMPI") == 0) {ID_I_Inst.OpCode = JMPI; ID_I_Inst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); }
-    else if (splitCIR.at(0).compare("BNE")  == 0) {ID_I_Inst.OpCode = BNE; ID_I_Inst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); }
-    else if (splitCIR.at(0).compare("BPO")  == 0) {ID_I_Inst.OpCode = BPO; ID_I_Inst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); }
-    else if (splitCIR.at(0).compare("BZ")   == 0) {ID_I_Inst.OpCode = BZ; ID_I_Inst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); }
+    else if (splitCIR.at(0).compare("JMP")  == 0) { ID_I_Inst.OpCode = JMP; ID_I_Inst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); ID_I_Inst.IsWriteBack = false; }
+    else if (splitCIR.at(0).compare("JMPI") == 0) { ID_I_Inst.OpCode = JMPI; ID_I_Inst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); ID_I_Inst.IsWriteBack = false; }
+    else if (splitCIR.at(0).compare("BNE")  == 0) { ID_I_Inst.OpCode = BNE; ID_I_Inst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); ID_I_Inst.IsWriteBack = false; }
+    else if (splitCIR.at(0).compare("BPO")  == 0) { ID_I_Inst.OpCode = BPO; ID_I_Inst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); ID_I_Inst.IsWriteBack = false; }
+    else if (splitCIR.at(0).compare("BZ")   == 0) { ID_I_Inst.OpCode = BZ; ID_I_Inst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); ID_I_Inst.IsWriteBack = false; }
 
-    else if (splitCIR.at(0).compare("HALT") == 0) ID_I_Inst.OpCode = HALT;
-    else if (splitCIR.at(0).compare("NOP")  == 0) ID_I_Inst.OpCode = NOP;
+    else if (splitCIR.at(0).compare("HALT") == 0) { ID_I_Inst.OpCode = HALT; ID_I_Inst.IsWriteBack = false; }
+    else if (splitCIR.at(0).compare("NOP")  == 0) { ID_I_Inst.OpCode = NOP; ID_I_Inst.IsWriteBack = false; }
     else if (splitCIR.at(0).compare("MV")   == 0) ID_I_Inst.OpCode = MV;
     else if (splitCIR.at(0).compare("MVHI") == 0) ID_I_Inst.OpCode = MVHI;
     else if (splitCIR.at(0).compare("MVLO") == 0) ID_I_Inst.OpCode = MVLO;
 
     else throw std::invalid_argument("Unidentified Instruction: " + splitCIR.at(0));
 
-
-    // Crush instruction into a DecodedInstruction dataType
-    //ID_I_Inst.OpCode = OpCodeRegister;
-    //ID_I_Inst.DEST = ALUD;
-    //ID_I_Inst.IN0 = ALU0;
-    //ID_I_Inst.IN1 = ALU1;
-    //ID_I_Inst.IMM = IMMEDIATE;
-
     // SUPER IMPORTANT - THIS IS THE PREVIOUS VALUE OF THE PC TO USE THE CORRECT OLD VALUE OF IT AND NOT THE NEW VALUE
     ID_I_Inst.OUT = IF_ID_Inst.PC;     // It is only set to the PC for the single instruction JMPI (indexed JMP)
 
     // IF_ID has now been fully used by the ID stage and the output of decode() is now being held in ID_I which makes ready for the NEXT stage and IF_ID has now been used up making it EMPTY
     IF_ID_Inst.state = EMPTY;
-    ID_I_Inst.state = NEXT;
+    
+    // Check for RAW HAZARDS and SET APPROPRIATE STATES
+    ID_I_Inst = HazardDetectioUnit->checkForRAW(ID_I_Inst);
 
     // Debuggin/GUI
     ID_I_Inst.asString = IF_ID_Inst.instruction;
+    ID_inst = ID_I_Inst.asString;
 
     
     std::cout << "Instruction " << ID_I_Inst.asString << " in ID decoded: "; ID_I_Inst.print();
@@ -468,6 +491,7 @@ void issue(){
     }
     else if (ID_I_Inst.state == NEXT){//|| ID_I_Inst.state == BLOCK){
 
+        // Debugging/GUI
         I_inst = ID_inst;
         
         // ALU
@@ -546,12 +570,12 @@ void issue(){
             
             // If the ALU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
             if (!ALU_RV.empty()){
-                if (ALU_RV.back().state == NEXT){
+                if (ALU_RV.front().state == NEXT){
                     // If the instruction in the RV is ready to be NEXT, then it is loaded into the ALU
 
                     // LOAD INTO ALU
-                    a->In = ALU_RV.back();
-                    ALU_RV.pop_back();
+                    a->In = ALU_RV.front();
+                    ALU_RV.pop_front();
 
                     cout << "Instruction " << a->In.asString << " loaded into the ALU" << (int) (std::find(ALUs.begin(), ALUs.end(), a) - ALUs.begin()) << ". Decoded instruction: "; a->In.print();
                 }
@@ -572,13 +596,13 @@ void issue(){
             
             // If the BU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
             if (!BU_RV.empty()){
-                if (BU_RV.back().state == NEXT){
+                if (BU_RV.front().state == NEXT){
                     
                     // If the instruction in the RV is ready to be NEXT, then it is loaded into the BU
 
                     // LOAD INTO BU
-                    b->In = BU_RV.back();
-                    BU_RV.pop_back();
+                    b->In = BU_RV.front();
+                    BU_RV.pop_front();
                 }
             }
         } else {
@@ -597,13 +621,13 @@ void issue(){
             
             // If the LSU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
             if (!LSU_RV.empty()){
-                if (LSU_RV.back().state == NEXT){
+                if (LSU_RV.front().state == NEXT){
 
                     // If the instruction in the RV is ready to be NEXT, then it is loaded into the LSU
                     
                     // LOAD INTO LSU
-                    l->In = LSU_RV.back();
-                    LSU_RV.pop_back();
+                    l->In = LSU_RV.front();
+                    LSU_RV.pop_front();
                 }
             }
         } else {
@@ -620,23 +644,35 @@ void issue(){
 void execute(){
     // Run all EUs
     for (ALU* a : ALUs) {
-        if ( (a->Out.state == EMPTY || a->Out.state == NEXT) && (a->In.state == NEXT || a->In.state == CURRENT) ) {
-            a->Inst = I_inst;
-            a->cycle();
+        if (a->Out.state == EMPTY || a->Out.state == NEXT) {
+            if (a->In.state == NEXT) {
+                a->Inst = a->In.asString;
+                a->cycle();
+            } 
+            else if (a->In.state == CURRENT) a->cycle();
+            else if (a->In.state == EMPTY) a->Inst = "";
         }
         else a->Inst = "";
     }
     for (BU*  b : BUs ) {
-        if ( (b->Out.state == EMPTY || b->Out.state == NEXT) && (b->In.state == NEXT || b->In.state == CURRENT) ) {
-            b->Inst = I_inst;
-            b->cycle();
+        if (b->Out.state == EMPTY || b->Out.state == NEXT){
+            if (b->In.state == NEXT){
+                b->Inst = b->In.asString;
+                b->cycle();
+            }
+            else if (b->In.state == CURRENT) b->cycle();
+            else if (b->In.state == EMPTY) b->Inst = "";
         }
         else b->Inst = "";
     }
     for (LSU* l : LSUs) {
-        if ( (l->Out.state == EMPTY || l->Out.state == NEXT) && (l->In.state == NEXT || l->In.state == CURRENT) ) {
-            l->Inst = I_inst;
-            l->cycle();
+        if (l->Out.state == EMPTY || l->Out.state == NEXT){
+            if (l->In.state == NEXT){
+                l->Inst = l->In.asString;
+                l->cycle();
+            }
+            else if (l->In.state == CURRENT) l->cycle();
+            else if (l->In.state == EMPTY) l->Inst = "";
         }
         else l->Inst = "";
     } 
@@ -690,7 +726,7 @@ void writeBack(){
         if (l->Out.state == NEXT){// || l->Out.state == BLOCK || l->Out.state == CURRENT){
             // It should be illegal for the instruction to BLOCK or be CURRENTLY running here but if it does then we would just ignore that write it back
             
-            if (l->writeBackFlag) {
+            if (l->Out.IsWriteBack) {
                 registerFile[l->Out.DEST] = l->Out.OUT;
                 std::cout << "Write back to index: " << l->Out.DEST << " with value: " << l->Out.OUT << std::endl;
             }
@@ -773,6 +809,7 @@ bool handleProgramFlags(int c, char** arguments){
 }
 
 #pragma endregion helperFunctions
+
 
 
 int main(int argc, char** argv){

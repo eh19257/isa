@@ -1,8 +1,85 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <vector>
+#include <utility>
 
 #include "EnumsAndConstants.hpp"
+
+/* Class prototypes */
+class ExecutionUnit;
+class ALU;
+class BU;
+class LSU;
+class HDU;
+
+
+
+// Hazard Dection Unit (HDU) - used for deteciton RAW hazards
+class HDU {
+    private:
+        std::vector<std::pair<Register, Optional<int>>> RAW_Table;
+
+        // Returns true if there is a RAW clash
+        bool checkForRegisterClashInRAWTable(std::vector<std::pair<Register, Optional<int>>>* RAW, int* val, Register* reg){
+            // Search through the RAW table for any destination regsiters that are in it
+            for (std::pair<Register, Optional<int>> entry : *RAW){
+                // Here we check if rs0 is trying to read from a rd that hasnt been fully updated yet
+                if (entry.first == *reg){
+                    if (entry.second.HasValue()){
+                        // The destination register has been found in the RAW_table but the result has been forwarded
+                        *val = entry.second.Value();
+                        return false;
+
+                    } else {
+                        // The result hasnt been written back and so we need to block this instruction
+                        return true;
+                    }
+
+                }
+            }
+            // if the rd isn't found in the RAW table then there is no RAW hazard
+            return false;
+        }
+        
+        void loadInstInToRAW_Table(DecodedInstruction inst){
+            // Check if the inst is a write back instruction
+            if (inst.IsWriteBack == true){
+                RAW_Table.push_back(std::pair<Register, Optional<int>>(inst.rd, Optional<int>()));
+            }
+        }
+
+    public:
+        DecodedInstruction checkForRAW(DecodedInstruction inst){
+            Register rs0, rs1;
+
+            bool Isrs0Block = checkForRegisterClashInRAWTable(&RAW_Table, &inst.IN0, &inst.rs0);
+            bool Isrs1Block = checkForRegisterClashInRAWTable(&RAW_Table, &inst.IN1, &inst.rs1);
+
+            // If either one of these are blocking then we set inst to BLOCK else it's ready to move on
+            if (Isrs0Block || Isrs1Block) {
+                inst.state = BLOCK;
+            } else {
+                inst.state = NEXT;
+
+                loadInstInToRAW_Table(inst);
+            }
+
+            return inst;
+        }
+
+        void LoadDestinationValueIntoRAWTable(DecodedInstruction inst){
+
+        }
+
+
+        HDU(){
+
+        }
+};
+
+
+
 
 // General class for all Components
 class ExecutionUnit{
@@ -11,13 +88,14 @@ class ExecutionUnit{
         EUState state;
         std::string Inst = "EMPTY";
 
-        bool writeBackFlag = false;
-
         DecodedInstruction In;
         DecodedInstruction Out;
+
+        HDU* HazardDetectionUnit;
     
-    ExecutionUnit(){
-        state = IDLE;
+    ExecutionUnit(HDU* haz) {
+        HazardDetectionUnit = haz;
+        //state = IDLE;
     }
 
     // Every component must be able to cycle
@@ -31,21 +109,22 @@ class ExecutionUnit{
 class ALU : public ExecutionUnit{
     public:
     
-    ALU(){
+    ALU(HDU* haz) : ExecutionUnit(haz){
 
     }
 
     void cycle(){
-        // set State
-        //state = RUNNING;
-        this->writeBackFlag = true;
+        // Update output's writeback status
+        this->Out.IsWriteBack = this->In.IsWriteBack;
 
         this->In.state = CURRENT;
-        // Update the second destination register 
-        Out.DEST = In.DEST;
+
+        // Move all info over to the output register 
+        this->Out = this->In;
 
         std::cout << "ALU cycle called" << std::endl;
 
+        // Now properly update the output register such that the output values are the correct, calculated values
         switch(In.OpCode){
             case ADD:                   // #####################
                 Out.OUT = In.IN0 + In.IN1;;     
@@ -118,6 +197,9 @@ class ALU : public ExecutionUnit{
                 break;
         }
 
+        // Load the output into the correct row in the RAW table
+        this->HazardDetectionUnit->LoadDestinationValueIntoRAWTable(this->Out);
+
         this->Out.state = NEXT;
         this->In.state = EMPTY;
 
@@ -134,12 +216,13 @@ class BU : public ExecutionUnit{
         bool branchFlag = false;    // True is there is going to be a branch - default = no branch
         bool haltFlag = false;
 
-    BU(){
+    BU(HDU* haz) : ExecutionUnit(haz){
     }
 
     void cycle(){
-        // Set state to RUNNING
-        
+        // Update output's writeback status
+        this->Out.IsWriteBack = this->In.IsWriteBack;
+
         this->In.state = CURRENT;
 
         branchFlag = false;
@@ -208,6 +291,8 @@ class BU : public ExecutionUnit{
             throw std::invalid_argument("BU cannot execute instruction: " + In.OpCode);
         }
 
+        // Load the output into the correct row in the RAW table
+        this->HazardDetectionUnit->LoadDestinationValueIntoRAWTable(this->Out);
 
         this->Out.state = NEXT;
         this->In.state = EMPTY;
@@ -221,15 +306,19 @@ class BU : public ExecutionUnit{
 
 // Implementation for a load/store unit (LSU)
 class LSU : public ExecutionUnit{
+     private:
+        int ldiCount = 0;
+        
     public:
         std::array<int, SIZE_OF_DATA_MEMORY>* memoryData;
 
-    LSU(std::array<int, SIZE_OF_DATA_MEMORY>* memData){
+    LSU(HDU* haz, std::array<int, SIZE_OF_DATA_MEMORY>* memData) : ExecutionUnit(haz){
         memoryData = memData;
     }
 
     void cycle(){
-        // Set state to RUNNING
+        // Update output's writeback status
+        this->Out.IsWriteBack = this->In.IsWriteBack;
 
         this->In.state = CURRENT;
 
@@ -239,22 +328,27 @@ class LSU : public ExecutionUnit{
                 Out.OUT = memoryData->at(In.IN0);
                 Out.DEST = In.DEST;
                 
-                this->writeBackFlag = true;
+                //this->writeBackFlag = true;
                 break;
 
             case LDD:
                 Out.OUT = memoryData->at(In.IMM);
                 Out.DEST = In.DEST;
 
-                this->writeBackFlag = true;
+                //this->writeBackFlag = true;
                 break;
 
             case LDI:                   // #####################
+                ldiCount++;
+                if (ldiCount < 3) return;
+
+                ldiCount = 0;
+
                 Out.OUT = In.IMM;
                 Out.DEST = In.DEST;
         
-                this->writeBackFlag = true;
-                std::cout << "LDI IS RUNNING HERE!!! this->writeBackFlag: " << this->writeBackFlag << std::endl;
+                //this->writeBackFlag = true;
+                //std::cout << "LDI IS RUNNING HERE!!! this->writeBackFlag: " << this->Out.IsWriteBack << std::endl;
                 break;
 
             /*case LID:                   // BROKEN ################################
@@ -264,47 +358,32 @@ class LSU : public ExecutionUnit{
                 Out.OUT = memoryData->at(In.IN0 + In.IN1);
                 Out.DEST = In.DEST;
 
-                this->writeBackFlag = true;
+                //this->writeBackFlag = true;
                 break;
 
             case STO:
                 memoryData->at(In.DEST) = In.IN0;
 
-                this->writeBackFlag = false;
+                //this->writeBackFlag = false;
                 break;
 
             case STOI:                   // #####################
                 memoryData->at(In.IMM) = In.IN0;
 
-                this->writeBackFlag = false;
+                //this->writeBackFlag = false;
                 break;
 
             default:
                 throw std::invalid_argument("LSU cannot execute instruction: " + In.OpCode);
         }
 
-        // Announce the fact that the instruction has been completed
+        // Load the output into the correct row in the RAW table
+        this->HazardDetectionUnit->LoadDestinationValueIntoRAWTable(this->Out);
 
         this->Out.state = NEXT;
         this->In.state = EMPTY;
 
         // Debugging/GUI
         //this->Inst = "";
-    }
-};
-
-
-// Hazard Dection Unit (HDU) - used for deteciton RAW hazards
-class HDU {
-    public:
-        std::vector<std::pair<Register, int>> RAW_Table;
-
-    // NEED RO IMPLEMENT INSTRUCTIOSTATE!!!!
-    /*InstructionState RAW(DecodedInstruction inst){
-
-    }*/
-
-    void loadInstInToRAW_Table(DecodedInstruction inst){
-        // Check if inst.rd is already in the table
     }
 };

@@ -65,13 +65,47 @@ struct NonDecodedInstruction {
     int PC;
 };
 
+/* C++11 doesnt have std::optional so im gonna have to makemy own */
+template <class T>
+class Optional{
+    private:
+        T value;
+        bool hasValue = false;
+
+    public:
+
+    Optional(){
+        
+    }
+
+    T Value(){
+        // Has no sanitising here because c++ seems to hate it
+        
+        return value;
+    }
+
+    void Value(T val){
+        value = val;
+    }
+
+    void RemoveValue(){
+        hasValue = false;
+    }
+
+    bool HasValue(){
+        return hasValue;
+    }
+};
+
+
+
 /* Instruction Struct - used for passing entire instructions between Reservation stations and EUs */
 struct DecodedInstruction {
     std::string asString = "";
 
     InstState state = EMPTY;    // State of the instruction
-
-    Instruction OpCode;     // OP code of the instruction
+    bool IsWriteBack = true;   // Default IS writeback
+    Instruction OpCode;         // OP code of the instruction
     
     Register rd;    // Actual register used in instruction for destination       - Used to fight RAW hazards
     Register rs0;   // Actual register used in instruction for source register 0 - Used to fight RAW hazards
