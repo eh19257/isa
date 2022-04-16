@@ -78,6 +78,11 @@ class Optional{
         this->hasValue = false;
     }
 
+    Optional(T val){
+        this->hasValue = true;
+        this->value = val;
+    }
+
     T Value(){
         // Has no sanitising here because c++ seems to hate it
         

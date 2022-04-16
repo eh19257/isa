@@ -245,6 +245,8 @@ void cycle(){
     // Pipelined
     writeBack(); /*complete();*/ execute(); issue(); decode(); fetch();
 
+    HazardDetectionUnit->printRAW();
+
     cout << "\nCurrent instruction in the IF: " << IF_inst << endl;
     cout << "Current instruction in the ID: " << ID_inst << endl;
     cout << "Current instruction in the I:  " << I_inst << endl;
@@ -472,6 +474,9 @@ void decode(){
     // Check for RAW HAZARDS and SET APPROPRIATE STATES
     ID_I_Inst = HazardDetectionUnit->checkForRAW(ID_I_Inst);
     
+    // Removes any RAW table entries 
+    HazardDetectionUnit->RemoveAnyWrittenBackValues();
+
     std::cout << "Instruction " << ID_I_Inst.asString << " in ID decoded: "; ID_I_Inst.print();
 }
 
@@ -725,6 +730,7 @@ void writeBack(){
 
             std::cout << "Write back to index: " << a->Out.DEST << " with value: " << a->Out.OUT << std::endl;
             registerFile[a->Out.DEST] = a->Out.OUT;
+            HazardDetectionUnit->SetWritebackFlag(a->Out);
 
             a->Out.state = EMPTY;
 
@@ -770,6 +776,7 @@ void writeBack(){
 
             if (l->Out.IsWriteBack) {
                 registerFile[l->Out.DEST] = l->Out.OUT;
+                 HazardDetectionUnit->SetWritebackFlag(l->Out);
                 std::cout << "Write back to index: " << l->Out.DEST << " with value: " << l->Out.OUT << std::endl;
             }
 

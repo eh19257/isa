@@ -18,22 +18,22 @@ class HDU;
 // Hazard Dection Unit (HDU) - used for deteciton RAW hazards
 class HDU {
     private:
-        std::vector<std::pair<Register, Optional<int>>> RAW_Table;
+        std::vector<std::tuple<Register, Optional<int>, bool>> RAW_Table;
 
         // Returns true if there is a RAW clash
-        bool checkForRegisterClashInRAWTable(std::vector<std::pair<Register, Optional<int>>>* RAW, int* val, Register* reg){
+        bool checkForRegisterClashInRAWTable(std::vector<std::tuple<Register, Optional<int>, bool>>* RAW, int* val, Register* reg){
             // returns false in the case an X is found - X is a dummy register that is only used to make the instructions follow a 3 operand form
             if (*reg == X) {
                 std::cout << "DUMMY REG X DETECTED" << std::endl;
                 return false;
             }
             // Search through the RAW table for any destination regsiters that are in it
-            for (std::pair<Register, Optional<int>> entry : *RAW){
+            for (std::tuple<Register, Optional<int>, bool> entry : *RAW){
                 // Here we check if rs0 is trying to read from a rd that hasnt been fully updated yet
-                if (entry.first == *reg){
-                    if (entry.second.HasValue()){
+                if (std::get<0>(entry) == *reg){
+                    if (std::get<1>(entry).HasValue()){
                         // The destination register has been found in the RAW_table and the result has been forwarded
-                        *val = entry.second.Value();
+                        *val = std::get<1>(entry).Value();
                         std::cout << "Value found in RAW table: " << *val << std::endl;
                         return false;
 
@@ -52,11 +52,24 @@ class HDU {
             // Check if the inst is a write back instruction
             if (inst.IsWriteBack == true && inst.rd != X){
                 std::cout << "entry in RAW TABLE create for: " << inst.asString << std::endl;
-                RAW_Table.push_back(std::pair<Register, Optional<int>>(inst.rd, Optional<int>()));
+                RAW_Table.push_back( std::make_tuple(inst.rd, Optional<int>(), false) );
             }
         }
 
     public:
+
+        void printRAW(){
+            std::cout << "RAW table:\n\tRegister\t\trd" << std::endl;
+                for (int i = 0; i < RAW_Table.size(); i++){
+                    std::cout << i << "\t" << std::get<0>(RAW_Table.at(i)) << "\t";
+                    if (std::get<1>(RAW_Table.at(i)).HasValue()){
+                        std::cout << std::get<1>(RAW_Table.at(i)).Value();
+                    }
+                    std::cout << std::endl;
+                } 
+                std::cout << "=== RAW table end ==="<< std::endl;
+        }
+
         DecodedInstruction checkForRAW(DecodedInstruction inst){
             Register rs0, rs1;
 
@@ -67,15 +80,8 @@ class HDU {
             if (Isrs0Block || Isrs1Block) {
                 inst.state = BLOCK;
                 std::cout << "RAW hazard detected for instruction: " << inst.asString << " Isrs0Block: " << Isrs0Block << " Isrs1Block: " << Isrs1Block << std::endl;
-                std::cout << "RAW table\n\tRegister\t\trd" << std::endl;
-                for (int i = 0; i < RAW_Table.size(); i++){
-                    std::cout << i << "\t" << RAW_Table.at(i).first << "\t";
-                    if (RAW_Table.at(i).second.HasValue()){
-                        std::cout << RAW_Table.at(i).second.Value();
-                    }
-                    std::cout << std::endl;
-                } 
-                std::cout << std::endl;
+                
+
             } else {
                 inst.state = NEXT;
 
@@ -88,13 +94,33 @@ class HDU {
         // Loads the result of the instruction into its respective entry within the RAW_Table
         void LoadDestinationValueIntoRAWTable(DecodedInstruction inst){
             for (int i = 0; i < RAW_Table.size(); i++){
-                if (RAW_Table.at(i).first == inst.rd){
-                    RAW_Table.at(i).second.Value(inst.OUT);
+                if (std::get<0>(RAW_Table.at(i)) == inst.rd){
+
+                    RAW_Table.at(i) = std::make_tuple(std::get<0>(RAW_Table.at(i)), Optional<int>(inst.OUT), false);
+                    //RAW_Table.at(i).second.Value(inst.OUT);
                     return;
                 }
             }
         }
 
+        // Removes any written back values - i.e. values that have the 3rd part of the RAW_Table entry = true
+        void RemoveAnyWrittenBackValues(){
+            for (int i = 0; i < RAW_Table.size(); i++){
+                // If this rd has been written back - then we can remove it from the table
+                if (std::get<2>(RAW_Table.at(i))){
+                    RAW_Table.erase(RAW_Table.begin() + i);
+                }
+            }
+        }
+
+        // When an instruction is done with writeback, it then flags this entry in the RAW Table as "writtenBack" at the end of this clock cycle it will be removed from the table using RemoveAnyWrittenBackValues()
+        void SetWritebackFlag(DecodedInstruction inst){
+            for (int i = 0; i < RAW_Table.size(); i++){
+                if (std::get<0>(RAW_Table.at(i)) == inst.rd){
+                    RAW_Table.at(i) = std::make_tuple(std::get<0>(RAW_Table.at(i)), std::get<1>(RAW_Table.at(i)), true);
+                }
+            }
+        }
 
         HDU(){
 
