@@ -22,13 +22,19 @@ class HDU {
 
         // Returns true if there is a RAW clash
         bool checkForRegisterClashInRAWTable(std::vector<std::pair<Register, Optional<int>>>* RAW, int* val, Register* reg){
+            // returns false in the case an X is found - X is a dummy register that is only used to make the instructions follow a 3 operand form
+            if (*reg == X) {
+                std::cout << "DUMMY REG X DETECTED" << std::endl;
+                return false;
+            }
             // Search through the RAW table for any destination regsiters that are in it
             for (std::pair<Register, Optional<int>> entry : *RAW){
                 // Here we check if rs0 is trying to read from a rd that hasnt been fully updated yet
                 if (entry.first == *reg){
                     if (entry.second.HasValue()){
-                        // The destination register has been found in the RAW_table but the result has been forwarded
+                        // The destination register has been found in the RAW_table and the result has been forwarded
                         *val = entry.second.Value();
+                        std::cout << "Value found in RAW table: " << *val << std::endl;
                         return false;
 
                     } else {
@@ -44,7 +50,8 @@ class HDU {
         
         void loadInstInToRAW_Table(DecodedInstruction inst){
             // Check if the inst is a write back instruction
-            if (inst.IsWriteBack == true){
+            if (inst.IsWriteBack == true && inst.rd != X){
+                std::cout << "entry in RAW TABLE create for: " << inst.asString << std::endl;
                 RAW_Table.push_back(std::pair<Register, Optional<int>>(inst.rd, Optional<int>()));
             }
         }
@@ -59,6 +66,16 @@ class HDU {
             // If either one of these are blocking then we set inst to BLOCK else it's ready to move on
             if (Isrs0Block || Isrs1Block) {
                 inst.state = BLOCK;
+                std::cout << "RAW hazard detected for instruction: " << inst.asString << " Isrs0Block: " << Isrs0Block << " Isrs1Block: " << Isrs1Block << std::endl;
+                std::cout << "RAW table\n\tRegister\t\trd" << std::endl;
+                for (int i = 0; i < RAW_Table.size(); i++){
+                    std::cout << i << "\t" << RAW_Table.at(i).first << "\t";
+                    if (RAW_Table.at(i).second.HasValue()){
+                        std::cout << RAW_Table.at(i).second.Value();
+                    }
+                    std::cout << std::endl;
+                } 
+                std::cout << std::endl;
             } else {
                 inst.state = NEXT;
 
@@ -68,8 +85,14 @@ class HDU {
             return inst;
         }
 
+        // Loads the result of the instruction into its respective entry within the RAW_Table
         void LoadDestinationValueIntoRAWTable(DecodedInstruction inst){
-
+            for (int i = 0; i < RAW_Table.size(); i++){
+                if (RAW_Table.at(i).first == inst.rd){
+                    RAW_Table.at(i).second.Value(inst.OUT);
+                    return;
+                }
+            }
         }
 
 
@@ -85,7 +108,6 @@ class HDU {
 class ExecutionUnit{
     
     public:
-        EUState state;
         std::string Inst = "EMPTY";
 
         DecodedInstruction In;
@@ -114,13 +136,12 @@ class ALU : public ExecutionUnit{
     }
 
     void cycle(){
-        // Update output's writeback status
-        this->Out.IsWriteBack = this->In.IsWriteBack;
-
-        this->In.state = CURRENT;
-
-        // Move all info over to the output register 
+        // Move all info over to the output register and set it being empty so that it can be loaded with info
         this->Out = this->In;
+        
+        // Update the stats of In and Out such that the EUs can run without getting interference with the states
+        this->Out.state = EMPTY;
+        this->In.state = CURRENT;
 
         std::cout << "ALU cycle called" << std::endl;
 
@@ -220,9 +241,11 @@ class BU : public ExecutionUnit{
     }
 
     void cycle(){
-        // Update output's writeback status
-        this->Out.IsWriteBack = this->In.IsWriteBack;
-
+        // Move all info over to the output register and set it being empty so that it can be loaded with info
+        this->Out = this->In;
+        
+        // Update the stats of In and Out such that the EUs can run without getting interference with the states
+        this->Out.state = EMPTY;
         this->In.state = CURRENT;
 
         branchFlag = false;
@@ -317,12 +340,15 @@ class LSU : public ExecutionUnit{
     }
 
     void cycle(){
-        // Update output's writeback status
-        this->Out.IsWriteBack = this->In.IsWriteBack;
-
+        // Move all info over to the output register and set it being empty so that it can be loaded with info
+        this->Out = this->In;
+        
+        // Update the stats of In and Out such that the EUs can run without getting interference with the states
+        this->Out.state = EMPTY;
         this->In.state = CURRENT;
 
         std::cout << "LSU cycle called" << std::endl;
+
         switch(In.OpCode){
             case LD:
                 Out.OUT = memoryData->at(In.IN0);

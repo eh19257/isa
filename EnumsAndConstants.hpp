@@ -70,12 +70,12 @@ template <class T>
 class Optional{
     private:
         T value;
-        bool hasValue = false;
+        bool hasValue;
 
     public:
 
     Optional(){
-        
+        this->hasValue = false;
     }
 
     T Value(){
@@ -85,11 +85,12 @@ class Optional{
     }
 
     void Value(T val){
-        value = val;
+        this->value = val;
+        this->hasValue = true;
     }
 
     void RemoveValue(){
-        hasValue = false;
+        this->hasValue = false;
     }
 
     bool HasValue(){
@@ -107,9 +108,9 @@ struct DecodedInstruction {
     bool IsWriteBack = true;   // Default IS writeback
     Instruction OpCode;         // OP code of the instruction
     
-    Register rd;    // Actual register used in instruction for destination       - Used to fight RAW hazards
-    Register rs0;   // Actual register used in instruction for source register 0 - Used to fight RAW hazards
-    Register rs1;   // Actual register used in instruction for source register 1 - Used to fight RAW hazards
+    Register rd = X;    // Actual register used in instruction for destination       - Used to fight RAW hazards
+    Register rs0 = X;   // Actual register used in instruction for source register 0 - Used to fight RAW hazards
+    Register rs1 = X;   // Actual register used in instruction for source register 1 - Used to fight RAW hazards
 
     int DEST;       // Destination for the instruction  (optional) 
     int IN0;        // Input 1
@@ -118,7 +119,7 @@ struct DecodedInstruction {
     int OUT;        // Output for the instruction       (optional) 
 
     void print(){
-        std::cout << "DEST: " << DEST << " IN0: " << IN0 << " IN1: " << IN1 << " IMM: " << IMM << " OUT: " << OUT << std::endl;
+        std::cout << "RD: " << rd << " DEST: " << DEST << " RS0: " << rs0 << " IN0: " << IN0 << " RS1: " << rs1 << " IN1: " << IN1 << " IMM: " << IMM << " OUT: " << OUT << std::endl;
     }
 
 };

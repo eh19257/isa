@@ -87,12 +87,12 @@ std::array<std::string, SIZE_OF_INSTRUCTION_MEMORY> instrMemory;
 std::array<int, SIZE_OF_DATA_MEMORY> dataMemory;
 
 /* Hazard Detection Units */
-HDU* HazardDetectioUnit = new HDU();
+HDU* HazardDetectionUnit = new HDU();
 
 /* Execution Units*/
-std::array<ALU*, 2> ALUs = {new ALU(HazardDetectioUnit), new ALU(HazardDetectioUnit)};
-std::array<BU*, 1> BUs = {new BU(HazardDetectioUnit)};
-std::array<LSU*, 1> LSUs = {new LSU(HazardDetectioUnit, &dataMemory)};
+std::array<ALU*, 2> ALUs = {new ALU(HazardDetectionUnit), new ALU(HazardDetectionUnit)};
+std::array<BU*, 1> BUs = {new BU(HazardDetectionUnit)};
+std::array<LSU*, 1> LSUs = {new LSU(HazardDetectionUnit, &dataMemory)};
 
 /* Reservation Stations */
 std::deque<DecodedInstruction> ALU_RV;
@@ -265,7 +265,6 @@ void cycle(){
         
         cout << endl;
     }
-    //cou
 
     cout << "\n\n" << endl;
     if (PRINT_REGISTERS_FLAG) printRegisterFile(8);
@@ -284,7 +283,7 @@ void run(){
     std::string foo;
     while (!systemHaltFlag) {
         cycle();        
-        std::cin >> foo;
+        //std::cin >> foo;
     }
     // This last cycle() is to finish the final execution of the
     cycle();
@@ -302,8 +301,10 @@ void fetch(){
 
     if (IF_ID_Inst.state == BLOCK || IF_ID_Inst.state == CURRENT){
         // We cannot collect any instructions from memory and pass it into IF_ID_Inst
+        cout << "Fetch() BLOCKED" << endl;
         return;
     }
+    // else if IF_ID_Inst.state = NEXT or EMPTY - it shouldnt be equal to NEXT here but we check anyway
 
     IF_ID_Inst.state = CURRENT;
     
@@ -342,15 +343,16 @@ void decode(){
     if (ID_I_Inst.state == BLOCK || ID_I_Inst.state == CURRENT){
         // If this happens then we cannot run the decode as there are no places in which the result can be stored
         IF_ID_Inst.state = BLOCK;
+        ID_inst = ID_I_Inst.asString + " BLOCK";
 
         numOfStalls += 1;
         return;
     } 
     else if (ID_I_Inst.state == EMPTY){// || ID_I_Inst.state == EMPTY){
-        // If this happens then decoded is able to be ran aslong as IF_ID_Inst contains an instruction
+        // If ID_I_Inst is empty then we need to ensure it's also now clean
+        ID_I_Inst = DecodedInstruction();
 
-        if (IF_ID_Inst.state == NEXT){
-            
+        if (IF_ID_Inst.state == NEXT || IF_ID_Inst.state == BLOCK || IF_ID_Inst.state == CURRENT){
             IF_ID_Inst.state = CURRENT;
         }
         else{
@@ -363,6 +365,7 @@ void decode(){
         cout << "ID_I_Inst has gone mad - illegal state as it's NEXT" << endl;
     }
     #pragma endregion State Setup
+
 
     std::vector<std::string> splitCIR = split(IF_ID_Inst.instruction, ' '); // split the instruction based on ' ' and decode instruction like that
     
@@ -462,13 +465,12 @@ void decode(){
     // IF_ID has now been fully used by the ID stage and the output of decode() is now being held in ID_I which makes ready for the NEXT stage and IF_ID has now been used up making it EMPTY
     IF_ID_Inst.state = EMPTY;
     
-    // Check for RAW HAZARDS and SET APPROPRIATE STATES
-    ID_I_Inst = HazardDetectioUnit->checkForRAW(ID_I_Inst);
-
     // Debuggin/GUI
     ID_I_Inst.asString = IF_ID_Inst.instruction;
     ID_inst = ID_I_Inst.asString;
 
+    // Check for RAW HAZARDS and SET APPROPRIATE STATES
+    ID_I_Inst = HazardDetectionUnit->checkForRAW(ID_I_Inst);
     
     std::cout << "Instruction " << ID_I_Inst.asString << " in ID decoded: "; ID_I_Inst.print();
 }
@@ -476,6 +478,7 @@ void decode(){
 
 // Issues the current instruction to it's repsective EU
 void issue(){
+
     #pragma region State Setup
     // State managing for ID_I and I_RVs
     // This is different as we need to check if 
@@ -488,12 +491,19 @@ void issue(){
 
         // Debugging/GUI
         I_inst = "";
+    } else if (ID_I_Inst.state == BLOCK){
+        // Debugging/GUI - if the previous one is still BLOCKING after the debugging check, then the debuggin inst needs ""
+        I_inst = "";
+
+        // Updates the ID_I_Inst to see whether it is still blocking or not 
+        ID_I_Inst = HazardDetectionUnit->checkForRAW(ID_I_Inst);   
     }
-    else if (ID_I_Inst.state == NEXT){//|| ID_I_Inst.state == BLOCK){
+
+    if (ID_I_Inst.state == NEXT){
 
         // Debugging/GUI
-        I_inst = ID_inst;
-        
+        I_inst = ID_I_Inst.asString;
+
         // ALU
         if ( (ID_I_Inst.OpCode >= ADD && ID_I_Inst.OpCode <= CMP) || ID_I_Inst.OpCode == MV || (ID_I_Inst.OpCode >= AND && ID_I_Inst.OpCode <= RSHFT) ){
 
@@ -552,13 +562,16 @@ void issue(){
         else {
             throw std::invalid_argument("Could no issue an unknown instruction: " + ID_I_Inst.OpCode);
         }
-    } else {
+    } /*else {
         // BLOCKING
-        cout << "INSTRUCTION IS CURRENTLY BLOCKING IN ID/I!!!" << endl;
-    }
+        cout << "INSTRUCTION IS BLOCKING IN ID_I_INST!!!" << endl;
+    }*/
 
 
-    //////////
+    ///////////////////////////////////
+    ////////// RV OFF LOADING /////////
+    ///////////////////////////////////
+
     // If the EUs are free, then we can off load the RVs into the EUs
     for (ALU* a : ALUs){
         if (a->In.state == BLOCK || a->In.state == CURRENT){
@@ -634,19 +647,22 @@ void issue(){
             cout << "Instruction in the LSU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
         }
     }
-
-    ID_I_Inst.state = EMPTY;
-    //I_EX_Inst.state = NEXT;
 }
 
 
 // Executes the current instruction
 void execute(){
-    // Run all EUs
+    // Running and setting the debugging values for the execution of the ALU
     for (ALU* a : ALUs) {
         if (a->Out.state == EMPTY || a->Out.state == NEXT) {
-            if (a->In.state == NEXT) {
+            if (a->In.state == NEXT || a->In.state == BLOCK) {
+                // Set state of the instruction
+                a->In.state = CURRENT;
+
+                // Debugging/GUI
                 a->Inst = a->In.asString;
+
+                // Actually run the bad boi
                 a->cycle();
             } 
             else if (a->In.state == CURRENT) a->cycle();
@@ -654,10 +670,18 @@ void execute(){
         }
         else a->Inst = "";
     }
+
+    // Running and setting the debugging values for the execution of the BU
     for (BU*  b : BUs ) {
         if (b->Out.state == EMPTY || b->Out.state == NEXT){
-            if (b->In.state == NEXT){
+            if (b->In.state == NEXT || b->In.state == BLOCK){
+                // Set state of the instruction
+                b->In.state = CURRENT;
+
+                // Debugging/GUI
                 b->Inst = b->In.asString;
+
+                // Actually run the bad boi
                 b->cycle();
             }
             else if (b->In.state == CURRENT) b->cycle();
@@ -665,10 +689,18 @@ void execute(){
         }
         else b->Inst = "";
     }
+    
+    // Running and setting the debugging values for the execution of the LSU
     for (LSU* l : LSUs) {
         if (l->Out.state == EMPTY || l->Out.state == NEXT){
             if (l->In.state == NEXT){
+                // Set state of the instruction
+                l->In.state = CURRENT;
+
+                // Debugging/GUI
                 l->Inst = l->In.asString;
+
+                // Actually run the bad boi
                 l->cycle();
             }
             else if (l->In.state == CURRENT) l->cycle();
@@ -685,8 +717,11 @@ void writeBack(){
 
     // unpack data from each ALU if there exists an instruciton in their output 
     for (ALU* a : ALUs){
-        if (a->Out.state == NEXT){// || a->Out.state == BLOCK || a->Out.state == CURRENT){
-            // It should be illegal for the instruction to BLOCK or be CURRENTLY running here but if it does then we would just ignore that write it back
+        if (a->Out.state == NEXT || a->Out.state == BLOCK) {// a->Out.state == CURRENT){
+            // It should be illegal for the instruction to be CURRENTLY running here but if it does then we would just ignore that write it back
+
+            // We first set the state here to CURRENT out of principle (and just in case we exapnd this any further in the future)
+            a->Out.state = CURRENT;
 
             std::cout << "Write back to index: " << a->Out.DEST << " with value: " << a->Out.OUT << std::endl;
             registerFile[a->Out.DEST] = a->Out.OUT;
@@ -701,9 +736,12 @@ void writeBack(){
 
     // upack data from each BU, if there exists an instruction in their output
     for (BU* b : BUs){
-        if (b->Out.state == NEXT){// || b->Out.state == BLOCK || b->Out.state == CURRENT){
-            // It should be illegal for the instruction to BLOCK or be CURRENTLY running here but if it does then we would just ignore that write it back
+        if (b->Out.state == NEXT || b->Out.state == BLOCK){// || b->Out.state == CURRENT){
+            // It should be illegal for the instruction to be CURRENTLY running here but if it does then we would just ignore that write it back
             
+            // We first set the state here to CURRENT out of principle (and just in case we exapnd this any further in the future)
+            b->Out.state = CURRENT;
+
             // Set halt flag here
             systemHaltFlag = b->haltFlag;
 
@@ -723,9 +761,13 @@ void writeBack(){
 
     // upack data from each BU, if there exists an instruction in their output
     for (LSU* l : LSUs){
-        if (l->Out.state == NEXT){// || l->Out.state == BLOCK || l->Out.state == CURRENT){
-            // It should be illegal for the instruction to BLOCK or be CURRENTLY running here but if it does then we would just ignore that write it back
+        if (l->Out.state == NEXT || l->Out.state == BLOCK){// || l->Out.state == CURRENT){
+            // It should be illegal for the instruction to be CURRENTLY running here but if it does then we would just ignore that write it back
             
+            // We first set the state here to CURRENT out of principle (and just in case we exapnd this any further in the future)
+            l->Out.state = CURRENT;
+
+
             if (l->Out.IsWriteBack) {
                 registerFile[l->Out.DEST] = l->Out.OUT;
                 std::cout << "Write back to index: " << l->Out.DEST << " with value: " << l->Out.OUT << std::endl;
