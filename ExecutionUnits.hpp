@@ -58,6 +58,10 @@ class HDU {
 
     public:
 
+        void ClearRAWTable(){
+            this->RAW_Table = std::vector<std::tuple<Register, Optional<int>, bool>>();
+        }
+
         void printRAW(){
             std::cout << "RAW table:\n\tRegister\t\trd" << std::endl;
                 for (int i = 0; i < RAW_Table.size(); i++){
@@ -70,8 +74,17 @@ class HDU {
                 std::cout << "=== RAW table end ==="<< std::endl;
         }
 
-        DecodedInstruction checkForRAW(DecodedInstruction inst){
-            Register rs0, rs1;
+
+        // Checks if the current instruction is dependent on a write, it also loads the instruction into the RAW table if it also could cause a RAW hazard
+        DecodedInstruction CheckForRAWAndLoad(DecodedInstruction inst){
+            inst = CheckForRAW(inst);
+            loadInstInToRAW_Table(inst);
+
+            return inst;
+        }
+
+        // Used when an instruction is in the RVs, checks BLOCKED instructions for forwarded values and then outputs the updated instruction
+        DecodedInstruction CheckForRAW(DecodedInstruction inst){
 
             bool Isrs0Block = checkForRegisterClashInRAWTable(&RAW_Table, &inst.IN0, &inst.rs0);
             bool Isrs1Block = checkForRegisterClashInRAWTable(&RAW_Table, &inst.IN1, &inst.rs1);
@@ -80,12 +93,8 @@ class HDU {
             if (Isrs0Block || Isrs1Block) {
                 inst.state = BLOCK;
                 std::cout << "RAW hazard detected for instruction: " << inst.asString << " Isrs0Block: " << Isrs0Block << " Isrs1Block: " << Isrs1Block << std::endl;
-                
-
             } else {
-                inst.state = NEXT;
-
-                loadInstInToRAW_Table(inst);
+                inst.state = NEXT;               
             }
 
             return inst;
