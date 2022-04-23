@@ -114,7 +114,7 @@ void writeBack();
 
 /* ISA helpers */
 void flushPipeline();
-bool AllEUsEmpty();
+bool AllEUsAndRVsEmpty();
 
 /* Non-ISA function headers */
 void loadProgramIntoMemory();
@@ -207,7 +207,7 @@ void outputStatistics(int numOfCycles){
 #pragma region F/D/E/M/W/
 
 // Returns true if all the execution units are empty
-bool AllEUsEmpty(){    
+bool AllEUsAndRVsEmpty(){    
     for (ALU* a : ALUs) {
         if (a->In.state  != EMPTY) return false;
         if (a->Out.state != EMPTY) return false;
@@ -220,6 +220,12 @@ bool AllEUsEmpty(){
         if (l->In.state  != EMPTY) return false;
         if (l->Out.state != EMPTY) return false;
     }
+
+    // Check RVs
+    if (!ALU_RV.empty()) return false;
+    if (!BU_RV.empty() ) return false;
+    if (!LSU_RV.empty()) return false;
+
     return true;
 }
 
@@ -287,13 +293,13 @@ void cycle(){
     for (int i = 0; i < MAX_RV_SIZE; i++){
         cout << i << "\t";
         if (ALU_RV.size() <= i) cout << "\t\t";
-        else cout << ALU_RV.at(i).asString << "\t";
+        else cout << ALU_RV.at(i).asString << " ::" << ALU_RV.at(i).state << "\t";
 
         if (BU_RV.size() <= i) cout << "\t\t";
-        else cout << BU_RV.at(i).asString << "\t";
+        else cout << BU_RV.at(i).asString << " ::" << BU_RV.at(i).state << "\t";
     
         if (LSU_RV.size() <= i) cout << "\t\t";
-        else cout << LSU_RV.at(i).asString << "\t";
+        else cout << LSU_RV.at(i).asString << " ::" << LSU_RV.at(i).state << "\t";
         
         cout << endl;
     }
@@ -312,13 +318,18 @@ void run(){
     // Print memory before running the program
     if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
 
+    outputAllMemory(amount_of_instruction_memory_to_output);
+
+
     std::string foo;
-    while (!(systemHaltFlag && AllEUsEmpty())) {
+    while (!(systemHaltFlag && AllEUsAndRVsEmpty())) {
         cycle();        
         //std::cin >> foo;
     }
     // This last cycle() is to finish the final execution of the
-    cycle();
+    // /cycle();
+
+    outputAllMemory(amount_of_instruction_memory_to_output);
 
     std::cout << "Program has been halted\n" << std::endl;
 
@@ -466,6 +477,7 @@ void decodeIssue(){
         
         else if (splitCIR.at(0).compare("STO")  == 0) { parsedInst.OpCode = STO; parsedInst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); parsedInst.IsWriteBack = false; }
         else if (splitCIR.at(0).compare("STOI") == 0) { parsedInst.OpCode = STOI; parsedInst.IMM = stoi(splitCIR.at(1)); parsedInst.IsWriteBack = false; }
+        else if (splitCIR.at(0).compare("STOA") == 0) { parsedInst.OpCode = STOA; parsedInst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); parsedInst.IsWriteBack = false; }
 
         else if (splitCIR.at(0).compare("AND")  == 0) parsedInst.OpCode = AND;
         else if (splitCIR.at(0).compare("OR")   == 0) parsedInst.OpCode = OR;
@@ -551,7 +563,7 @@ void decodeIssue(){
         }
 
         // LSU
-        else if (parsedInst.OpCode >= LD && parsedInst.OpCode <= STOI) {
+        else if (parsedInst.OpCode >= LD && parsedInst.OpCode <= STOA) {
 
              // Check if there is any space in the RVs
             if (LSU_RV.size() >= MAX_RV_SIZE){
@@ -573,103 +585,102 @@ void decodeIssue(){
             throw std::invalid_argument("Could no issue an unknown instruction: " + ID_I_Inst.OpCode);
         }
 
-
-
-        ///////////////////////////////////
-        ////////// RV OFF LOADING /////////
-        ///////////////////////////////////
-
-        // If the EUs are free, then we can off load the RVs into the EUs
-        for (ALU* a : ALUs){
-            if (a->In.state == BLOCK){
-                // We run through ever entry in the RV, if it is blocking there might be an entry in the RAW table which can help us 
-                a->In = HazardDetectionUnit->CheckForRAW(a->In);
-            }
-
-            if (a->In.state == CURRENT){
-                // If the In-instruction for this EU is BLOCKING or CURRENTLY running then we do not d anything
-                
-                continue;
-
-            } else if (a->In.state == EMPTY ){//|| a->In.state == NEXT){
-                
-                // If the ALU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
-                if (!ALU_RV.empty()){
-                    if (ALU_RV.front().state == NEXT){
-                        // If the instruction in the RV is ready to be NEXT, then it is loaded into the ALU
-
-                        // LOAD INTO ALU
-                        a->In = ALU_RV.front();
-                        ALU_RV.pop_front();
-
-                        cout << "Instruction " << a->In.asString << " loaded into the ALU" << (int) (std::find(ALUs.begin(), ALUs.end(), a) - ALUs.begin()) << ". Decoded instruction: "; a->In.print();
-                    }
-                }
-            } else {
-                cout << "Instruction in the ALU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
-            }
-        }
-
-        // If the BUs are free, then we can off load the RVs into the BUs
-        for (BU* b : BUs){
-            if (b->In.state == BLOCK){
-                // We run through ever entry in the RV, if it is blocking there might be an entry in the RAW table which can help us 
-                b->In = HazardDetectionUnit->CheckForRAW(b->In);
-            }
-
-            if (b->In.state == CURRENT){
-                // If the In-instruction for this EU is BLOCKING or CURRENTLY running then we do not d anything
-                
-                continue;
-
-            } else if (b->In.state == EMPTY){// || b->In.state == NEXT){
-                
-                // If the BU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
-                if (!BU_RV.empty()){
-                    if (BU_RV.front().state == NEXT){
-                        
-                        // If the instruction in the RV is ready to be NEXT, then it is loaded into the BU
-
-                        // LOAD INTO BU
-                        b->In = BU_RV.front();
-                        BU_RV.pop_front();
-                    }
-                }
-            } else {
-                cout << "Instruction in the BU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
-            }
-        }
-
-        // If the LSUs are free, then we can off load the RVs into the LSUs
-        for (LSU* l : LSUs){
-            if (l->In.state == BLOCK){
-                // We run through ever entry in the RV, if it is blocking there might be an entry in the RAW table which can help us 
-                l->In = HazardDetectionUnit->CheckForRAW(l->In);
-            }
-
-            if (l->In.state == CURRENT){
-                // If the In-instruction for this EU is BLOCKING or CURRENTLY running then we do not d anything
-                
-                continue;
-
-            } else if (l->In.state == EMPTY){//|| l->In.state == NEXT){
-                
-                // If the LSU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
-                if (!LSU_RV.empty()){
-                    if (LSU_RV.front().state == NEXT){
-
-                        // If the instruction in the RV is ready to be NEXT, then it is loaded into the LSU
-                        
-                        // LOAD INTO LSU
-                        l->In = LSU_RV.front();
-                        LSU_RV.pop_front();
-                    }
-                }
-            } else {
-                cout << "Instruction in the LSU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
-            }
-        }    
     }
+
+    ///////////////////////////////////
+    ////////// RV OFF LOADING /////////
+    ///////////////////////////////////
+
+    // If the EUs are free, then we can off load the RVs into the EUs
+    for (ALU* a : ALUs){
+        if (a->In.state == BLOCK){
+            // We run through ever entry in the RV, if it is blocking there might be an entry in the RAW table which can help us 
+            a->In = HazardDetectionUnit->CheckForRAW(a->In);
+        }
+
+        if (a->In.state == CURRENT){
+            // If the In-instruction for this EU is BLOCKING or CURRENTLY running then we do not d anything
+            
+            continue;
+
+        } else if (a->In.state == EMPTY ){//|| a->In.state == NEXT){
+            
+            // If the ALU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
+            if (!ALU_RV.empty()){
+                if (ALU_RV.front().state == NEXT){
+                    // If the instruction in the RV is ready to be NEXT, then it is loaded into the ALU
+
+                    // LOAD INTO ALU
+                    a->In = ALU_RV.front();
+                    ALU_RV.pop_front();
+
+                    cout << "Instruction " << a->In.asString << " loaded into the ALU" << (int) (std::find(ALUs.begin(), ALUs.end(), a) - ALUs.begin()) << ". Decoded instruction: "; a->In.print();
+                }
+            }
+        } else {
+            cout << "Instruction in the ALU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
+        }
+    }
+
+    // If the BUs are free, then we can off load the RVs into the BUs
+    for (BU* b : BUs){
+        if (b->In.state == BLOCK){
+            // We run through ever entry in the RV, if it is blocking there might be an entry in the RAW table which can help us 
+            b->In = HazardDetectionUnit->CheckForRAW(b->In);
+        }
+
+        if (b->In.state == CURRENT){
+            // If the In-instruction for this EU is BLOCKING or CURRENTLY running then we do not d anything
+            
+            continue;
+
+        } else if (b->In.state == EMPTY){// || b->In.state == NEXT){
+            
+            // If the BU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
+            if (!BU_RV.empty()){
+                if (BU_RV.front().state == NEXT){
+                    
+                    // If the instruction in the RV is ready to be NEXT, then it is loaded into the BU
+
+                    // LOAD INTO BU
+                    b->In = BU_RV.front();
+                    BU_RV.pop_front();
+                }
+            }
+        } else {
+            cout << "Instruction in the BU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
+        }
+    }
+
+    // If the LSUs are free, then we can off load the RVs into the LSUs
+    for (LSU* l : LSUs){
+        if (l->In.state == BLOCK){
+            // We run through ever entry in the RV, if it is blocking there might be an entry in the RAW table which can help us 
+            l->In = HazardDetectionUnit->CheckForRAW(l->In);
+        }
+
+        if (l->In.state == CURRENT){
+            // If the In-instruction for this EU is BLOCKING or CURRENTLY running then we do not d anything
+            
+            continue;
+
+        } else if (l->In.state == EMPTY){//|| l->In.state == NEXT){
+            
+            // If the LSU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
+            if (!LSU_RV.empty()){
+                if (LSU_RV.front().state == NEXT){
+
+                    // If the instruction in the RV is ready to be NEXT, then it is loaded into the LSU
+                    
+                    // LOAD INTO LSU
+                    l->In = LSU_RV.front();
+                    LSU_RV.pop_front();
+                }
+            }
+        } else {
+            cout << "Instruction in the LSU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
+        }
+    }    
 
 
     // Now we can remove any writtenback entries in the RAW_Table

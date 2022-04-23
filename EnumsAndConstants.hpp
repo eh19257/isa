@@ -22,6 +22,7 @@ enum Instruction {
 
     STO,
     STOI,
+    STOA,
 
     AND,
     OR,

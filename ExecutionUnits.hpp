@@ -343,6 +343,8 @@ class BU : public ExecutionUnit{
 
         case NOP:
             std::cout << "NOP EXECUTED!!!" << std::endl;
+            //int foo;
+            //std::cin >> foo;
             break;
         
         default:
@@ -401,7 +403,7 @@ class LSU : public ExecutionUnit{
 
             case LDI:                   // #####################
                 ldiCount++;
-                if (ldiCount < 3) return;
+                if (ldiCount < 0) return;
 
                 ldiCount = 0;
 
@@ -432,6 +434,11 @@ class LSU : public ExecutionUnit{
                 memoryData->at(In.IMM) = In.IN0;
 
                 //this->writeBackFlag = false;
+                break;
+            
+            case STOA:
+                memoryData->at(In.DEST + In.IN0) = In.IN1;
+
                 break;
 
             default:
