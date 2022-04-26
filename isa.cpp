@@ -9,6 +9,7 @@
 #include <thread>
 #include <queue>
 #include <deque>
+#include <map>
 
 
 //#include "EnumsAndConstants.hpp"
@@ -28,9 +29,11 @@ int amount_of_instruction_memory_to_output = 8;  // default = 8
 /* Registers */
 #pragma region Registers
 
-/* "Register File" - currently just a bunch of variables */
-std::array<int, 16> registerFile;    // All 16 general purpose registers
-std::array<float, 4> floatingPointRegisterFile;
+/* Register Files */
+std::array<int, SIZE_OF_REGISTER_FILE> ArchRegisterFile;        // Architecural register file for 16 general purpose registers
+std::array<std::pair<int, bool>, SIZE_OF_REGISTER_FILE * 4> PhysRegisterFile;   // Physcial regsiter file for n*16 general purpose registers
+std::map<Register, int> ARF_To_PRF;                             // Map between ARF regstiers and PRF registers
+//std::array<float, 4> floatingPointRegisterFile;
 
 int PC;                     // Program Counter
 
@@ -124,7 +127,7 @@ bool handleProgramFlags(int count, char** arguments);
 
 /* Debugging function headers*/
 void outputAllMemory(int cutOff);
-void printRegisterFile(int maxReg);
+void printArchRegisterFile(int maxReg);
 void outputStatistics(int numOfCycles);
 
 /* Debugging/GUI for showing whch Instruction is in which stage */
@@ -170,12 +173,12 @@ void outputAllMemory(int cutOff){
     } std::cout << std::endl;
 }
 
-void printRegisterFile(int maxReg){
+void printArchRegisterFile(int maxReg){
     std::cout << std::endl;
     std::cout << "PC: " << PC << std::endl;
     std::cout << "CIR: " << CIR << std::endl;
     for (int i = 0; (i < 16) && (i < maxReg); i++){
-        std::cout << "R" << i << ": " << registerFile.at(i) << std::endl;
+        std::cout << "R" << i << ": " << ArchRegisterFile.at(i) << std::endl;
     }
     std::cout << "IMMEDIATE: " << IMMEDIATE << std::endl;
     std::cout << "ALU0: " << ALU0 << std::endl;
@@ -265,6 +268,21 @@ void flushPipeline(){
     HazardDetectionUnit->ClearRAWTable();
 }
 
+// Checks whether or not an instruction uses a register to write to and only write to - used for register renaming
+bool CheckIfWriteOnly(DecodedInstruction inst){
+    if (inst.rd == X || !inst.IsWriteBack || inst.rd == inst.rs0 || inst.rd == inst.rs1) return false;
+    return true;
+}
+
+// Gets the index of an unused regsiter in the physicla register file
+int GetUnusedRegisterInPRF(){
+    int count = 0;
+    // NOt srue if bool intialises as true by default but im too braindead to work it out
+    while (!PhysRegisterFile.at(count).second){
+        count++;
+    }
+    return count;
+}
 
 // A single cycle of the processor
 void cycle(){
@@ -305,7 +323,7 @@ void cycle(){
     }
 
     cout << "\n\n" << endl;
-    if (PRINT_REGISTERS_FLAG) printRegisterFile(8);
+    if (PRINT_REGISTERS_FLAG) printArchRegisterFile(8);
     if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
 
     std::cout << "---------- Cycle " << numOfCycles << " completed. ----------\n"<< std::endl;
@@ -384,6 +402,143 @@ void fetch(){
 }
 
 
+/*
+template<typename T>
+void OffLoadRVIntoEU(T* ExecutionUnit, std::deque<DecodedInstruction>* ReservationStation){
+     // If the EUs are free, then we can off load the RVs into the EUs
+    for (ALU* a : ALUs){
+        if (a->In.state == BLOCK){
+            // We run through ever entry in the RV, if it is blocking there might be an entry in the RAW table which can help us 
+            a->In = HazardDetectionUnit->CheckForRAW(a->In);
+        }
+
+        if (a->In.state == CURRENT){
+            // If the In-instruction for this EU is BLOCKING or CURRENTLY running then we do not d anything
+            
+            continue;
+
+        } else if (a->In.state == EMPTY ){//|| a->In.state == NEXT){
+            
+            // If the ALU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
+            if (!ReservationStation.empty()){
+                if (ReservationStation.front().state == NEXT){
+                    // If the instruction in the RV is ready to be NEXT, then it is loaded into the ALU
+
+                    // LOAD INTO ALU
+                    a->In = ReservationStation.front();
+                    ALU_RV.pop_front();
+
+                    cout << "Instruction " << a->In.asString << " loaded into the ALU" << (int) (std::find(ALUs.begin(), ALUs.end(), a) - ALUs.begin()) << ". Decoded instruction: "; a->In.print();
+                }
+            }
+        } else {
+            cout << "Instruction in the ALU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
+        }
+    }
+
+
+}*/
+
+
+
+void OffLoadingReservationStations(){
+    ///////////////////////////////////
+    ////////// RV OFF LOADING /////////
+    ///////////////////////////////////
+
+    // If the EUs are free, then we can off load the RVs into the EUs
+    for (ALU* a : ALUs){
+        if (a->In.state == BLOCK){
+            // We run through ever entry in the RV, if it is blocking there might be an entry in the RAW table which can help us 
+            a->In = HazardDetectionUnit->CheckForRAW(a->In);
+        }
+
+        if (a->In.state == CURRENT){
+            // If the In-instruction for this EU is BLOCKING or CURRENTLY running then we do not d anything
+            
+            continue;
+
+        } else if (a->In.state == EMPTY ){//|| a->In.state == NEXT){
+            
+            // If the ALU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
+            if (!ALU_RV.empty()){
+                if (ALU_RV.front().state == NEXT){
+                    // If the instruction in the RV is ready to be NEXT, then it is loaded into the ALU
+
+                    // LOAD INTO ALU
+                    a->In = ALU_RV.front();
+                    ALU_RV.pop_front();
+
+                    cout << "Instruction " << a->In.asString << " loaded into the ALU" << (int) (std::find(ALUs.begin(), ALUs.end(), a) - ALUs.begin()) << ". Decoded instruction: "; a->In.print();
+                }
+            }
+        } else {
+            cout << "Instruction in the ALU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
+        }
+    }
+
+    // If the BUs are free, then we can off load the RVs into the BUs
+    for (BU* b : BUs){
+        if (b->In.state == BLOCK){
+            // We run through ever entry in the RV, if it is blocking there might be an entry in the RAW table which can help us 
+            b->In = HazardDetectionUnit->CheckForRAW(b->In);
+        }
+
+        if (b->In.state == CURRENT){
+            // If the In-instruction for this EU is BLOCKING or CURRENTLY running then we do not d anything
+            
+            continue;
+
+        } else if (b->In.state == EMPTY){// || b->In.state == NEXT){
+            
+            // If the BU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
+            if (!BU_RV.empty()){
+                if (BU_RV.front().state == NEXT){
+                    
+                    // If the instruction in the RV is ready to be NEXT, then it is loaded into the BU
+
+                    // LOAD INTO BU
+                    b->In = BU_RV.front();
+                    BU_RV.pop_front();
+                }
+            }
+        } else {
+            cout << "Instruction in the BU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
+        }
+    }
+
+    // If the LSUs are free, then we can off load the RVs into the LSUs
+    for (LSU* l : LSUs){
+        if (l->In.state == BLOCK){
+            // We run through ever entry in the RV, if it is blocking there might be an entry in the RAW table which can help us 
+            l->In = HazardDetectionUnit->CheckForRAW(l->In);
+        }
+
+        if (l->In.state == CURRENT){
+            // If the In-instruction for this EU is BLOCKING or CURRENTLY running then we do not d anything
+            
+            continue;
+
+        } else if (l->In.state == EMPTY){//|| l->In.state == NEXT){
+            
+            // If the LSU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
+            if (!LSU_RV.empty()){
+                if (LSU_RV.front().state == NEXT){
+
+                    // If the instruction in the RV is ready to be NEXT, then it is loaded into the LSU
+                    
+                    // LOAD INTO LSU
+                    l->In = LSU_RV.front();
+                    LSU_RV.pop_front();
+                }
+            }
+        } else {
+            cout << "Instruction in the LSU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
+        }
+    }   
+}
+
+
 // Combined Instruction Decode with Issue
 void decodeIssue(){
     // Cycle through every channel
@@ -419,39 +574,58 @@ void decodeIssue(){
 
                 parsedInst.DEST = parsedInst.rd;
                 //ALUD = parsedInst.rd;
-            } else {
-                // If the register takes an immediate and not a register then it'll put an X in this spot so it doesnt cause any weird issues with hazard detection
-                parsedInst.DEST = X;
             }
             //else if (splitCIR.at(1).substr(0, 2).compare("FP") == 0)  ALUD = (FP_Register) stoi(splitCIR.at(1).substr(1, splitCIR.at(1).length()));
 
             if (splitCIR.size() > 2) {
-                if      (splitCIR.at(2).substr(0, 1).compare("r")  == 0 ) {
+                if (splitCIR.at(2).substr(0, 1).compare("r")  == 0 ) {
                     parsedInst.rs0 = strToRegister(splitCIR.at(2));
 
-                    parsedInst.IN0 = registerFile.at(parsedInst.rs0);
-                    //ALU0 = registerFile.at(parsedInst.rs0);
-                } else {
-                    // If the register takes an immediate and not a register then it'll put an X in this spot so it doesnt cause any weird issues with hazard detection
-                    parsedInst.IN0 = X;
+                    //parsedInst.IN0 = ArchRegisterFile.at(parsedInst.rs0);
+                    //ALU0 = ArchRegisterFile.at(parsedInst.rs0);
                 }
                 //else if (splitCIR.at(2).substr(0, 2).compare("FP") == 0)  ALU_FP0 = (FP_Register) stoi(splitCIR.at(2).substr(1, splitCIR.at(2).length()));
                 
                 if (splitCIR.size() > 3) {
-                    if      (splitCIR.at(3).substr(0,1).compare("r")  == 0 ){
+                    if (splitCIR.at(3).substr(0,1).compare("r")  == 0 ){
                         parsedInst.rs1 = strToRegister(splitCIR.at(3));
 
-                        parsedInst.IN1 = registerFile.at(parsedInst.rs1);
-                        //ALU1 = registerFile.at(parsedInst.rs1);
-                    } else {
-                        // If the register takes an immediate and not a register then it'll put an X in this spot so it doesnt cause any weird issues with hazard detection
-                        parsedInst.IN1 = X;
-                    }
+                        //parsedInst.IN1 = ArchRegisterFile.at(parsedInst.rs1);
+                        //ALU1 = ArchRegisterFile.at(parsedInst.rs1);
+                    } 
                     //else if (splitCIR.at(3).substr(0,1).compare("FP") == 0 ) ALU_FP1 = (FP_Register) stoi(splitCIR.at(3).substr(1, splitCIR.at(3).length()));
 
                 }
             }
         }
+
+        // Here we apply register renaming
+        if (CheckIfWriteOnly(parsedInst)){
+            int Prd = GetUnusedRegisterInPRF();
+
+            // If there are no usable registers in the PRF then we cannot continue and so the IF/IDI register must block
+            if (Prd == -1){
+                IF_IDI[i].state = BLOCK;
+
+                IDI_inst[i] = "";
+                continue;
+            } else {
+                // Create entry in ARF_To_PRF
+                ARF_To_PRF[parsedInst.rd] = Prd;
+
+                // Replace the ARF register in the instruction with the new PRF one
+                parsedInst.rd = (Register) Prd;               
+            }
+        }
+        // Register renaming for other instructions
+        if (parsedInst.rs0 != X) {
+            parsedInst.IN0 = PhysRegisterFile.at(ARF_To_PRF[parsedInst.rs0]).first;
+        }
+        if (parsedInst.rs1 != X) {
+            parsedInst.IN1 = PhysRegisterFile.at(ARF_To_PRF[parsedInst.rs1]).first;
+        }
+
+
 
         // SET WRTEBACK TO TRUE AS DEFAULT
         parsedInst.IsWriteBack = true;
@@ -475,9 +649,9 @@ void decodeIssue(){
         else if (splitCIR.at(0).compare("LID")  == 0) parsedInst.OpCode = LID;
         else if (splitCIR.at(0).compare("LDA")  == 0) parsedInst.OpCode = LDA;
         
-        else if (splitCIR.at(0).compare("STO")  == 0) { parsedInst.OpCode = STO; parsedInst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); parsedInst.IsWriteBack = false; }
+        else if (splitCIR.at(0).compare("STO")  == 0) { parsedInst.OpCode = STO; parsedInst.DEST = PhysRegisterFile.at(ARF_To_PRF[parsedInst.rd]).first; parsedInst.IsWriteBack = false; }//ArchRegisterFile.at(strToRegister(splitCIR.at(1))); parsedInst.IsWriteBack = false; }
         else if (splitCIR.at(0).compare("STOI") == 0) { parsedInst.OpCode = STOI; parsedInst.IMM = stoi(splitCIR.at(1)); parsedInst.IsWriteBack = false; }
-        else if (splitCIR.at(0).compare("STOA") == 0) { parsedInst.OpCode = STOA; parsedInst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); parsedInst.IsWriteBack = false; }
+        else if (splitCIR.at(0).compare("STOA") == 0) { parsedInst.OpCode = STOA; parsedInst.DEST = PhysRegisterFile.at(ARF_To_PRF[parsedInst.rd]).first; parsedInst.IsWriteBack = false; }
 
         else if (splitCIR.at(0).compare("AND")  == 0) parsedInst.OpCode = AND;
         else if (splitCIR.at(0).compare("OR")   == 0) parsedInst.OpCode = OR;
@@ -485,11 +659,11 @@ void decodeIssue(){
         else if (splitCIR.at(0).compare("LSHFT")== 0) parsedInst.OpCode = LSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
         else if (splitCIR.at(0).compare("RSHFT")== 0) parsedInst.OpCode = RSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
 
-        else if (splitCIR.at(0).compare("JMP")  == 0) { parsedInst.OpCode = JMP; parsedInst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); parsedInst.IsWriteBack = false; }
-        else if (splitCIR.at(0).compare("JMPI") == 0) { parsedInst.OpCode = JMPI; parsedInst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); parsedInst.IsWriteBack = false; }
-        else if (splitCIR.at(0).compare("BNE")  == 0) { parsedInst.OpCode = BNE; parsedInst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); parsedInst.IsWriteBack = false; }
-        else if (splitCIR.at(0).compare("BPO")  == 0) { parsedInst.OpCode = BPO; parsedInst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); parsedInst.IsWriteBack = false; }
-        else if (splitCIR.at(0).compare("BZ")   == 0) { parsedInst.OpCode = BZ; parsedInst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); parsedInst.IsWriteBack = false; }
+        else if (splitCIR.at(0).compare("JMP")  == 0) { parsedInst.OpCode = JMP; parsedInst.DEST = PhysRegisterFile.at(ARF_To_PRF[parsedInst.rd]).first; parsedInst.IsWriteBack = false; }
+        else if (splitCIR.at(0).compare("JMPI") == 0) { parsedInst.OpCode = JMPI; parsedInst.DEST = PhysRegisterFile.at(ARF_To_PRF[parsedInst.rd]).first; parsedInst.IsWriteBack = false; }
+        else if (splitCIR.at(0).compare("BNE")  == 0) { parsedInst.OpCode = BNE; parsedInst.DEST = PhysRegisterFile.at(ARF_To_PRF[parsedInst.rd]).first; parsedInst.IsWriteBack = false; }
+        else if (splitCIR.at(0).compare("BPO")  == 0) { parsedInst.OpCode = BPO; parsedInst.DEST = PhysRegisterFile.at(ARF_To_PRF[parsedInst.rd]).first; parsedInst.IsWriteBack = false; }
+        else if (splitCIR.at(0).compare("BZ")   == 0) { parsedInst.OpCode = BZ; parsedInst.DEST = PhysRegisterFile.at(ARF_To_PRF[parsedInst.rd]).first; parsedInst.IsWriteBack = false; }
 
         else if (splitCIR.at(0).compare("HALT") == 0) { parsedInst.OpCode = HALT; parsedInst.IsWriteBack = false; }
         else if (splitCIR.at(0).compare("NOP")  == 0) { parsedInst.OpCode = NOP; parsedInst.IsWriteBack = false; }
@@ -587,433 +761,12 @@ void decodeIssue(){
 
     }
 
-    ///////////////////////////////////
-    ////////// RV OFF LOADING /////////
-    ///////////////////////////////////
 
-    // If the EUs are free, then we can off load the RVs into the EUs
-    for (ALU* a : ALUs){
-        if (a->In.state == BLOCK){
-            // We run through ever entry in the RV, if it is blocking there might be an entry in the RAW table which can help us 
-            a->In = HazardDetectionUnit->CheckForRAW(a->In);
-        }
-
-        if (a->In.state == CURRENT){
-            // If the In-instruction for this EU is BLOCKING or CURRENTLY running then we do not d anything
-            
-            continue;
-
-        } else if (a->In.state == EMPTY ){//|| a->In.state == NEXT){
-            
-            // If the ALU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
-            if (!ALU_RV.empty()){
-                if (ALU_RV.front().state == NEXT){
-                    // If the instruction in the RV is ready to be NEXT, then it is loaded into the ALU
-
-                    // LOAD INTO ALU
-                    a->In = ALU_RV.front();
-                    ALU_RV.pop_front();
-
-                    cout << "Instruction " << a->In.asString << " loaded into the ALU" << (int) (std::find(ALUs.begin(), ALUs.end(), a) - ALUs.begin()) << ". Decoded instruction: "; a->In.print();
-                }
-            }
-        } else {
-            cout << "Instruction in the ALU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
-        }
-    }
-
-    // If the BUs are free, then we can off load the RVs into the BUs
-    for (BU* b : BUs){
-        if (b->In.state == BLOCK){
-            // We run through ever entry in the RV, if it is blocking there might be an entry in the RAW table which can help us 
-            b->In = HazardDetectionUnit->CheckForRAW(b->In);
-        }
-
-        if (b->In.state == CURRENT){
-            // If the In-instruction for this EU is BLOCKING or CURRENTLY running then we do not d anything
-            
-            continue;
-
-        } else if (b->In.state == EMPTY){// || b->In.state == NEXT){
-            
-            // If the BU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
-            if (!BU_RV.empty()){
-                if (BU_RV.front().state == NEXT){
-                    
-                    // If the instruction in the RV is ready to be NEXT, then it is loaded into the BU
-
-                    // LOAD INTO BU
-                    b->In = BU_RV.front();
-                    BU_RV.pop_front();
-                }
-            }
-        } else {
-            cout << "Instruction in the BU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
-        }
-    }
-
-    // If the LSUs are free, then we can off load the RVs into the LSUs
-    for (LSU* l : LSUs){
-        if (l->In.state == BLOCK){
-            // We run through ever entry in the RV, if it is blocking there might be an entry in the RAW table which can help us 
-            l->In = HazardDetectionUnit->CheckForRAW(l->In);
-        }
-
-        if (l->In.state == CURRENT){
-            // If the In-instruction for this EU is BLOCKING or CURRENTLY running then we do not d anything
-            
-            continue;
-
-        } else if (l->In.state == EMPTY){//|| l->In.state == NEXT){
-            
-            // If the LSU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
-            if (!LSU_RV.empty()){
-                if (LSU_RV.front().state == NEXT){
-
-                    // If the instruction in the RV is ready to be NEXT, then it is loaded into the LSU
-                    
-                    // LOAD INTO LSU
-                    l->In = LSU_RV.front();
-                    LSU_RV.pop_front();
-                }
-            }
-        } else {
-            cout << "Instruction in the LSU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
-        }
-    }    
-
+    OffLoadingReservationStations();
 
     // Now we can remove any writtenback entries in the RAW_Table
     HazardDetectionUnit->RemoveAnyWrittenBackValues();
 }
-
-
-/*
-// Takes current instruction that is being used and decodes it so that it can be understood by the computer (not a massively important part)
-// Updates PC
-void decode(){
-
-    // Cycle through every channel
-    for (int i = 0; i < IF_IDI.size(); i++){
-        #pragma region State Setup
-        // State managing for IF_ID_Inst and ID_I_Inst
-        
-        if (ID_I_Inst.state == BLOCK || ID_I_Inst.state == CURRENT){
-            // If this happens then we cannot run the decode as there are no places in which the result can be stored
-            IF_IDI[i].state = BLOCK;
-            ID_inst = ID_I_Inst.asString + " BLOCK";
-
-            numOfStalls += 1;
-            continue;
-        } 
-        else if (ID_I_Inst.state == EMPTY){// || ID_I_Inst.state == EMPTY){
-            // If ID_I_Inst is empty then we need to ensure it's also now clean
-            ID_I_Inst = DecodedInstruction();
-
-            if (IF_IDI[i].state == NEXT || IF_IDI[i].state == BLOCK || IF_IDI[i].state == CURRENT){
-                IF_IDI[i].state = CURRENT;
-            }
-            else{
-                // Decode() cannot be run with no inputs and so we return
-
-                ID_inst = "";
-                continue;
-            }        
-        } else {
-            cout << "ID_I_Inst has gone mad - illegal state as it's NEXT" << endl;
-        }
-        #pragma endregion State Setup
-
-
-        std::vector<std::string> splitCIR = split(IF_IDI[i].instruction, ' '); // split the instruction based on ' ' and decode instruction like that
-        
-        // Throws error if there isn't any instruction to be loaded
-        if (splitCIR.size() == 0) throw std::invalid_argument("No instruction loaded");
-        
-        // Load the register values into the ALU's input
-        if (splitCIR.size() > 1) {
-            // Get set first/destination register
-            if (splitCIR.at(1).substr(0 ,1).compare("r")  == 0 ) {
-                ID_I_Inst.rd = strToRegister(splitCIR.at(1)); 
-
-                ID_I_Inst.DEST = ID_I_Inst.rd;
-                //ALUD = ID_I_Inst.rd;
-            } else {
-                // If the register takes an immediate and not a register then it'll put an X in this spot so it doesnt cause any weird issues with hazard detection
-                ID_I_Inst.DEST = X;
-            }
-            //else if (splitCIR.at(1).substr(0, 2).compare("FP") == 0)  ALUD = (FP_Register) stoi(splitCIR.at(1).substr(1, splitCIR.at(1).length()));
-
-            if (splitCIR.size() > 2) {
-                if      (splitCIR.at(2).substr(0, 1).compare("r")  == 0 ) {
-                    ID_I_Inst.rs0 = strToRegister(splitCIR.at(2));
-
-                    ID_I_Inst.IN0 = registerFile.at(ID_I_Inst.rs0);
-                    //ALU0 = registerFile.at(ID_I_Inst.rs0);
-                } else {
-                    // If the register takes an immediate and not a register then it'll put an X in this spot so it doesnt cause any weird issues with hazard detection
-                    ID_I_Inst.IN0 = X;
-                }
-                //else if (splitCIR.at(2).substr(0, 2).compare("FP") == 0)  ALU_FP0 = (FP_Register) stoi(splitCIR.at(2).substr(1, splitCIR.at(2).length()));
-                
-                if (splitCIR.size() > 3) {
-                    if      (splitCIR.at(3).substr(0,1).compare("r")  == 0 ){
-                        ID_I_Inst.rs1 = strToRegister(splitCIR.at(3));
-
-                        ID_I_Inst.IN1 = registerFile.at(ID_I_Inst.rs1);
-                        //ALU1 = registerFile.at(ID_I_Inst.rs1);
-                    } else {
-                        // If the register takes an immediate and not a register then it'll put an X in this spot so it doesnt cause any weird issues with hazard detection
-                        ID_I_Inst.IN1 = X;
-                    }
-                    //else if (splitCIR.at(3).substr(0,1).compare("FP") == 0 ) ALU_FP1 = (FP_Register) stoi(splitCIR.at(3).substr(1, splitCIR.at(3).length()));
-
-                }
-            }
-        }
-
-        // SET WRTEBACK TO TRUE AS DEFAULT
-        ID_I_Inst.IsWriteBack = true;
-
-        // if statement for decoding all instructions
-            if (splitCIR.at(0).compare("ADD")  == 0) ID_I_Inst.OpCode = ADD;
-        else if (splitCIR.at(0).compare("ADDI") == 0) { ID_I_Inst.OpCode = ADDI; ID_I_Inst.IMM = stoi(splitCIR.at(3)); }
-        else if (splitCIR.at(0).compare("ADDF") == 0) ID_I_Inst.OpCode = ADDF;
-        else if (splitCIR.at(0).compare("SUB")  == 0) ID_I_Inst.OpCode = SUB;
-        else if (splitCIR.at(0).compare("SUBF") == 0) ID_I_Inst.OpCode = SUBF;
-        else if (splitCIR.at(0).compare("MUL")  == 0) ID_I_Inst.OpCode = MUL;
-        else if (splitCIR.at(0).compare("MULO") == 0) ID_I_Inst.OpCode = MULO;
-        else if (splitCIR.at(0).compare("MULFO")== 0) ID_I_Inst.OpCode = MULFO;
-        else if (splitCIR.at(0).compare("DIV")  == 0) ID_I_Inst.OpCode = DIV;
-        else if (splitCIR.at(0).compare("DIVF") == 0) ID_I_Inst.OpCode = DIVF;
-        else if (splitCIR.at(0).compare("CMP")  == 0) ID_I_Inst.OpCode = CMP;
-
-        else if (splitCIR.at(0).compare("LD")   == 0) ID_I_Inst.OpCode = LD;
-        else if (splitCIR.at(0).compare("LDD")  == 0) { ID_I_Inst.OpCode = LDD; ID_I_Inst.IMM = stoi(splitCIR.at(2)); } 
-        else if (splitCIR.at(0).compare("LDI")  == 0) { ID_I_Inst.OpCode = LDI; ID_I_Inst.IMM = stoi(splitCIR.at(2)); }
-        else if (splitCIR.at(0).compare("LID")  == 0) ID_I_Inst.OpCode = LID;
-        else if (splitCIR.at(0).compare("LDA")  == 0) ID_I_Inst.OpCode = LDA;
-        
-        else if (splitCIR.at(0).compare("STO")  == 0) { ID_I_Inst.OpCode = STO; ID_I_Inst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); ID_I_Inst.IsWriteBack = false; }
-        else if (splitCIR.at(0).compare("STOI") == 0) { ID_I_Inst.OpCode = STOI; ID_I_Inst.IMM = stoi(splitCIR.at(1)); ID_I_Inst.IsWriteBack = false; }
-
-        else if (splitCIR.at(0).compare("AND")  == 0) ID_I_Inst.OpCode = AND;
-        else if (splitCIR.at(0).compare("OR")   == 0) ID_I_Inst.OpCode = OR;
-        else if (splitCIR.at(0).compare("NOT")  == 0) ID_I_Inst.OpCode = NOT;
-        else if (splitCIR.at(0).compare("LSHFT")== 0) ID_I_Inst.OpCode = LSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
-        else if (splitCIR.at(0).compare("RSHFT")== 0) ID_I_Inst.OpCode = RSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
-
-        else if (splitCIR.at(0).compare("JMP")  == 0) { ID_I_Inst.OpCode = JMP; ID_I_Inst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); ID_I_Inst.IsWriteBack = false; }
-        else if (splitCIR.at(0).compare("JMPI") == 0) { ID_I_Inst.OpCode = JMPI; ID_I_Inst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); ID_I_Inst.IsWriteBack = false; }
-        else if (splitCIR.at(0).compare("BNE")  == 0) { ID_I_Inst.OpCode = BNE; ID_I_Inst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); ID_I_Inst.IsWriteBack = false; }
-        else if (splitCIR.at(0).compare("BPO")  == 0) { ID_I_Inst.OpCode = BPO; ID_I_Inst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); ID_I_Inst.IsWriteBack = false; }
-        else if (splitCIR.at(0).compare("BZ")   == 0) { ID_I_Inst.OpCode = BZ; ID_I_Inst.DEST = registerFile.at(strToRegister(splitCIR.at(1))); ID_I_Inst.IsWriteBack = false; }
-
-        else if (splitCIR.at(0).compare("HALT") == 0) { ID_I_Inst.OpCode = HALT; ID_I_Inst.IsWriteBack = false; }
-        else if (splitCIR.at(0).compare("NOP")  == 0) { ID_I_Inst.OpCode = NOP; ID_I_Inst.IsWriteBack = false; }
-        else if (splitCIR.at(0).compare("MV")   == 0) ID_I_Inst.OpCode = MV;
-        else if (splitCIR.at(0).compare("MVHI") == 0) ID_I_Inst.OpCode = MVHI;
-        else if (splitCIR.at(0).compare("MVLO") == 0) ID_I_Inst.OpCode = MVLO;
-
-        else throw std::invalid_argument("Unidentified Instruction: " + splitCIR.at(0));
-
-        // SUPER IMPORTANT - THIS IS THE PREVIOUS VALUE OF THE PC TO USE THE CORRECT OLD VALUE OF IT AND NOT THE NEW VALUE
-        ID_I_Inst.OUT = IF_IDI[i].PC;     // It is only set to the PC for the single instruction JMPI (indexed JMP)
-
-        // IF_ID has now been fully used by the ID stage and the output of decode() is now being held in ID_I which makes ready for the NEXT stage and IF_ID has now been used up making it EMPTY
-        IF_IDI[i].state = EMPTY;
-        
-        // Debuggin/GUI
-        ID_I_Inst.asString = IF_IDI[i].instruction;
-        ID_inst = ID_I_Inst.asString;
-
-        // Check for RAW HAZARDS and SET APPROPRIATE STATES
-        ID_I_Inst = HazardDetectionUnit->checkForRAW(ID_I_Inst);
-
-        std::cout << "Instruction " << ID_I_Inst.asString << " in ID decoded: "; ID_I_Inst.print();
-
-
-    }
-
-    // Removes any RAW table entries 
-    HazardDetectionUnit->RemoveAnyWrittenBackValues();
-}
-
-
-// Issues the current instruction to it's repsective EU
-void issue(){
-
-    #pragma region State Setup
-    // State managing for ID_I and I_RVs
-    // This is different as we need to check if 
-
-    if (ID_I_Inst.state == CURRENT) {
-        // Note: here it shouldnt be possible for ID_I_Inst to have a current state but we deal with it like this anyway
-    
-    } else if (ID_I_Inst.state == EMPTY) {
-        cout << "I is empty" << endl;
-
-        // Debugging/GUI
-        I_inst = "";
-    } else if (ID_I_Inst.state == BLOCK){
-        // Debugging/GUI - if the previous one is still BLOCKING after the debugging check, then the debuggin inst needs ""
-        I_inst = "";
-
-        // Updates the ID_I_Inst to see whether it is still blocking or not 
-        ID_I_Inst = HazardDetectionUnit->checkForRAW(ID_I_Inst);   
-    }
-
-    if (ID_I_Inst.state == NEXT){
-
-        // Debugging/GUI
-        I_inst = ID_I_Inst.asString;
-
-        // ALU
-        if ( (ID_I_Inst.OpCode >= ADD && ID_I_Inst.OpCode <= CMP) || ID_I_Inst.OpCode == MV || (ID_I_Inst.OpCode >= AND && ID_I_Inst.OpCode <= RSHFT) ){
-
-            // Check if there is any space in the RVs
-            if (ALU_RV.size() >= MAX_RV_SIZE){
-                // the ALU's RV is full and so we have to set the ID_I_Inst to BLOCKING
-                ID_I_Inst.state = BLOCK;
-            } else {
-                // HERE THERE IS SPACE IN THE ALU_RV AND SO WE CAN ISSUE AN INSTRUCTION TO IT
-                ID_I_Inst.state = NEXT;
-
-                ALU_RV.push_back(ID_I_Inst);
-
-                ID_I_Inst.state = EMPTY;
-
-                cout << "Loaded instruction " << ID_I_Inst.asString << " into ALU_RV. Decoded instruction: "; ID_I_Inst.print();
-            }            
-        }
-        // BU
-        else if (ID_I_Inst.OpCode >= JMP && ID_I_Inst.OpCode <= BZ || ID_I_Inst.OpCode == HALT || ID_I_Inst.OpCode == NOP) {
-            
-            // Check if there is any space in the RVs
-            if (BU_RV.size() >= MAX_RV_SIZE){
-                // the ALU's RV is full and so we have to set the ID_I_Inst to BLOCKING
-                ID_I_Inst.state = BLOCK;
-            } else {
-                // HERE THERE IS SPACE IN THE ALU_RV AND SO WE CAN ISSUE AN INSTRUCTION TO IT
-                ID_I_Inst.state = NEXT;
-
-                BU_RV.push_back(ID_I_Inst);
-
-                ID_I_Inst.state = EMPTY;
-                
-                cout << "Loaded instruction " << ID_I_Inst.asString << " into BU_RV. Decoded instruction: "; ID_I_Inst.print();
-            }       
-        }
-
-        // LSU
-        else if (ID_I_Inst.OpCode >= LD && ID_I_Inst.OpCode <= STOI) {
-
-             // Check if there is any space in the RVs
-            if (LSU_RV.size() >= MAX_RV_SIZE){
-                // the ALU's RV is full and so we have to set the ID_I_Inst to BLOCKING
-                ID_I_Inst.state = BLOCK;
-            } else {
-                // HERE THERE IS SPACE IN THE ALU_RV AND SO WE CAN ISSUE AN INSTRUCTION TO IT
-                ID_I_Inst.state = NEXT;
-
-                LSU_RV.push_back(ID_I_Inst);
-
-                ID_I_Inst.state = EMPTY;
-
-                cout << "Loaded instruction " << ID_I_Inst.asString << " into LSU_RV. Decoded instruction: "; ID_I_Inst.print();
-            }
-        }  
-        else {
-            throw std::invalid_argument("Could no issue an unknown instruction: " + ID_I_Inst.OpCode);
-        }
-    } /*else {
-        // BLOCKING
-        cout << "INSTRUCTION IS BLOCKING IN ID_I_INST!!!" << endl;
-    }
-
-
-    ///////////////////////////////////
-    ////////// RV OFF LOADING /////////
-    ///////////////////////////////////
-
-    // If the EUs are free, then we can off load the RVs into the EUs
-    for (ALU* a : ALUs){
-        if (a->In.state == BLOCK || a->In.state == CURRENT){
-            // If the In-instruction for this EU is BLOCKING or CURRENTLY running then we do not d anything
-            
-            continue;
-
-        } else if (a->In.state == EMPTY ){//|| a->In.state == NEXT){
-            
-            // If the ALU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
-            if (!ALU_RV.empty()){
-                if (ALU_RV.front().state == NEXT){
-                    // If the instruction in the RV is ready to be NEXT, then it is loaded into the ALU
-
-                    // LOAD INTO ALU
-                    a->In = ALU_RV.front();
-                    ALU_RV.pop_front();
-
-                    cout << "Instruction " << a->In.asString << " loaded into the ALU" << (int) (std::find(ALUs.begin(), ALUs.end(), a) - ALUs.begin()) << ". Decoded instruction: "; a->In.print();
-                }
-            }
-        } else {
-            cout << "Instruction in the ALU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
-        }
-    }
-
-    // If the BUs are free, then we can off load the RVs into the BUs
-    for (BU* b : BUs){
-        if (b->In.state == BLOCK || b->In.state == CURRENT){
-            // If the In-instruction for this EU is BLOCKING or CURRENTLY running then we do not d anything
-            
-            continue;
-
-        } else if (b->In.state == EMPTY){// || b->In.state == NEXT){
-            
-            // If the BU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
-            if (!BU_RV.empty()){
-                if (BU_RV.front().state == NEXT){
-                    
-                    // If the instruction in the RV is ready to be NEXT, then it is loaded into the BU
-
-                    // LOAD INTO BU
-                    b->In = BU_RV.front();
-                    BU_RV.pop_front();
-                }
-            }
-        } else {
-            cout << "Instruction in the BU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
-        }
-    }
-
-    // If the LSUs are free, then we can off load the RVs into the LSUs
-    for (LSU* l : LSUs){
-        if (l->In.state == BLOCK || l->In.state == CURRENT){
-            // If the In-instruction for this EU is BLOCKING or CURRENTLY running then we do not d anything
-            
-            continue;
-
-        } else if (l->In.state == EMPTY){//|| l->In.state == NEXT){
-            
-            // If the LSU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
-            if (!LSU_RV.empty()){
-                if (LSU_RV.front().state == NEXT){
-
-                    // If the instruction in the RV is ready to be NEXT, then it is loaded into the LSU
-                    
-                    // LOAD INTO LSU
-                    l->In = LSU_RV.front();
-                    LSU_RV.pop_front();
-                }
-            }
-        } else {
-            cout << "Instruction in the LSU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
-        }
-    }
-}
-*/
-
 
 // Executes the current instruction
 void execute(){
@@ -1076,7 +829,6 @@ void execute(){
 }
 
 
-
 // Data written back into register file: Write backs don't occur on STO or HALT (or NOP)
 void writeBack(){
     
@@ -1093,7 +845,7 @@ void writeBack(){
             a->Out.state = CURRENT;
 
             std::cout << "Write back to index: " << a->Out.DEST << " with value: " << a->Out.OUT << std::endl;
-            registerFile[a->Out.DEST] = a->Out.OUT;
+            ArchRegisterFile[a->Out.DEST] = a->Out.OUT;
             HazardDetectionUnit->SetWritebackFlag(a->Out);
 
             a->Out.state = EMPTY;
@@ -1139,7 +891,7 @@ void writeBack(){
 
 
             if (l->Out.IsWriteBack) {
-                registerFile[l->Out.DEST] = l->Out.OUT;
+                ArchRegisterFile[l->Out.DEST] = l->Out.OUT;
                  HazardDetectionUnit->SetWritebackFlag(l->Out);
                 std::cout << "Write back to index: " << l->Out.DEST << " with value: " << l->Out.OUT << std::endl;
             }

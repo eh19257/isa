@@ -1,44 +1,47 @@
 // LOAD in memory
-LDI r1 69   // 69
+LDI r1 69
 STOI 0 r1
-LDI r1 54   // 54
+LDI r1 54
 STOI 1 r1
-LDI r1 45   // 45
+LDI r1 45
 STOI 2 r1
-LDI r1 94   // 94
+LDI r1 94
 STOI 3 r1
-LDI r1 21   // 21
+LDI r1 21
 STOI 4 r1
-LDI r1 23   // 23
+LDI r1 23
 STOI 5 r1
-LDI r1 1    // 1
+LDI r1 1
 STOI 6 r1
-LDI r1 73   // 73
+LDI r1 73
 STOI 7 r1
-LDI r1 35   // 35
+LDI r1 35
 STOI 8 r1
-LDI r1 89   // 89
+LDI r1 89
 STOI 9 r1
 
-LDI r1 0        // index for i
-LDI r2 0        // index for j (internal loop)
-LDI r3 10       // Size of the list to be sorted / n
-LDI r4 0        // location in memory 
-LDI r9 34       // location in this file for the jumping over the swap
-LDI r11 26      // Loation in this file for the start of loop 
+LDI r1 0
+LDI r2 0
+LDI r3 10
+LDI r4 0 
+LDI r9 36
+LDI r11 28
+
+LDI r5 1
+SUB r3 r3 r5
 
 // External Loop  --- Actual sorting
 // Internal Loop
-LDA r5 r4 r2        // load arr[j] into r4
-ADDI r6 r2 1        // make j+1
-LDA r7 r4 r6        // load arr[j+1] into r7
-CMP r8 r5 r7        // arr[j] > arr[j+1] = 1
-BNE r9 r8           // Jump past to our conditional if arr[j] < arr[j+1] - the correct order
+LDA r5 r4 r2
+ADDI r6 r2 1
+LDA r7 r4 r6
+CMP r8 r5 r7
+BNE r9 r8
 
 // Do the swap
-MV r10 r7           // r10 is our tmp
-STOA r4 r6 r5       // arr[j+1] = arr[j]
-STOA r4 r2 r10      // arr[j] = tmp
+MV r10 r7
+STOA r4 r6 r5
+STOA r4 r2 r10
 
 // increment the internal loop
 NOP

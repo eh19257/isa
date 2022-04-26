@@ -119,7 +119,7 @@ struct DecodedInstruction {
     Register rs1 = X;   // Actual register used in instruction for source register 1 - Used to fight RAW hazards
 
     int DEST;       // Destination for the instruction  (optional) 
-    int IN0;        // Input 1
+    int IN0;        // Input 1                          (optional)
     int IN1;        // Input 2                          (optional) 
     int IMM;        // Immediate                        (optional) 
     int OUT;        // Output for the instruction       (optional) 
@@ -132,6 +132,7 @@ struct DecodedInstruction {
 
 
 /* Constants */
+const int SIZE_OF_REGISTER_FILE = 16;           // Number of architectural register
 const int SIZE_OF_INSTRUCTION_MEMORY = 256;     // size of the read-only instruction memory
 const int SIZE_OF_DATA_MEMORY = 256;            // pretty much the heap and all
 
