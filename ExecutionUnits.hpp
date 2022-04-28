@@ -166,11 +166,12 @@ class HDU {
                     return true;
                 }
             }
+            // if the entry was not found in the RAW table then we know that this register is not valid to use yet so we return false
             return false;
         }
     
         void ForwardResult(DecodedInstruction inst){
-            RAW_Table.push_back(std::pair<int, int>(inst.rd, inst.OUT));
+            if (inst.IsWriteBack) RAW_Table.push_back(std::pair<int, int>(inst.DEST, inst.OUT));
         }
 
         void ClearRAW_Table(){
@@ -186,6 +187,7 @@ class ExecutionUnit{
     
     public:
         std::string Inst = "EMPTY";
+        DecodedInstruction currentInst;
 
         DecodedInstruction In;
         DecodedInstruction Out;

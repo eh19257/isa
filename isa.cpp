@@ -149,12 +149,19 @@ string I_inst = "";
 string EX_inst = "";
 string WB_inst = "";
 
+array<DecodedInstruction, SUPERSCALAR_WIDTH> IF_gui;
+array<DecodedInstruction, SUPERSCALAR_WIDTH> IDI_gui;
+DecodedInstruction EX_gui;
+DecodedInstruction WB_gui;
 
 /* Stats variables */
 int numOfCycles = 1;        // Counts the number of cycles (stats at cycle 1 not cycle 0)
 int numOfBranches = 0;
 int numOfStalls = 0;        // Counts the number of times the pipeline stalls
 int numOfBubbles = 0;
+
+/* Tracking Variables */
+int IndexOfLastRegisterUsedInPRF = -1;
 
 #pragma region debugging
 
@@ -189,7 +196,7 @@ void printArchRegisterFile(int maxReg){
     std::cout << "PC: " << PC << std::endl;
     std::cout << "CIR: " << CIR << std::endl;
     for (int i = 0; (i < 16) && (i < maxReg); i++){
-        std::cout << "R" << i << ": " << ArchRegisterFile.at(i) << std::endl;
+        std::cout << "PRF" << i << ": " << PhysRegisterFile.at(i).first << "\t\t" << PhysRegisterFile.at(i).second << std::endl;
     }
     std::cout << "IMMEDIATE: " << IMMEDIATE << std::endl;
     std::cout << "ALU0: " << ALU0 << std::endl;
@@ -283,24 +290,51 @@ void flushPipeline(){
 
     // Clean RAW table
     HazardDetectionUnit->ClearRAW_Table();
+
+    /*
+    // Set all validity flags to valid
+    for (int i = 0; i < PhysRegisterFile.size(); i++){
+        PhysRegisterFile.at(i).second = true;
+    }*/
 }
 
 
 // Checks whether or not an instruction uses a register to write to and only write to - used for register renaming
 bool CheckIfWriteOnly(DecodedInstruction inst){
-    if (inst.rd == -1 || !inst.IsWriteBack || inst.rd == inst.rs0 || inst.rd == inst.rs1) return false;
+    //if (inst.rd == -1 || !inst.IsWriteBack || inst.rd == inst.rs0 || inst.rd == inst.rs1) return false;
+    if (inst.rd == -1 || !inst.IsWriteBack) return false;
     return true;
 }
 
 // Gets the index of an unused regsiter in the physicla register file
 int GetUnusedRegisterInPRF(){
-    int count = 0;
-    // NOt srue if bool intialises as true by default but im too braindead to work it out
-    while (!PhysRegisterFile.at(count).second){
-        count++;
-        cout << "Count = " << count << "Shouldn't be >= " << PhysRegisterFile.size() << endl;
+    int foo = IndexOfLastRegisterUsedInPRF;
+
+    // iterate through the x - n registers in the PRF
+    cout << "size of PRF: " << PhysRegisterFile.size() << endl;
+    cout << "IndexOfLastRegisterUsedInPRF: " << IndexOfLastRegisterUsedInPRF << endl;
+    
+    while (foo < ((int) PhysRegisterFile.size() - 1)) {
+        foo = foo + 1;
+        cout << "foo: " << foo << endl;
+        if (PhysRegisterFile.at(foo).second) {
+            IndexOfLastRegisterUsedInPRF = foo;
+            return IndexOfLastRegisterUsedInPRF;
+        }
     }
-    return count;
+    // iterate through 0-x registers in the PRF
+    int bar = -1;
+    while (bar < IndexOfLastRegisterUsedInPRF){
+        bar = bar + 1;
+        if (PhysRegisterFile.at(bar).second) {
+            IndexOfLastRegisterUsedInPRF = bar;
+            return IndexOfLastRegisterUsedInPRF;
+        }
+    }
+    cout << "This is run" << endl;
+    // if there aren't any registers avaliable (i.e. they are all in use which is very unlikely), then return -1
+    IndexOfLastRegisterUsedInPRF = -1;
+    return IndexOfLastRegisterUsedInPRF;
 }
 
 
@@ -382,11 +416,11 @@ void cycle(){
 
     //HazardDetectionUnit->printRAW();
 
-    cout << "\nCurrent instruction in the IF: " << IF_inst[0] << endl;
-    cout << "Current instruction in the IDI: " << IDI_inst[0] << endl;
+    cout << "\nCurrent instruction in the IF: " << IF_inst[0] << std::endl;
+    cout << "Current instruction in the IDI: "; IDI_gui[0].printHuman(); std::cout << std::endl;
     //cout << "Current instruction in the I:  " << I_inst << endl;
-    cout << "Current instruction in ALU0: " << ALUs.at(0)->Inst << "\tALU1: " << ALUs.at(1)->Inst << "\tBU: " << BUs.at(0)->Inst << "\tLSU: " << LSUs.at(0)->Inst << endl;
-    cout << "Current instruction in the WB: " << WB_inst << endl;
+    cout << "Current instruction in ALU0: "; ALUs.at(0)->currentInst.printHuman(); std::cout << "\tALU1: "; ALUs.at(1)->currentInst.printHuman(); std::cout << "\tBU: "; BUs.at(0)->currentInst.printHuman(); std::cout << "\tLSU: "; LSUs.at(0)->currentInst.printHuman(); std::cout << std::endl;
+    cout << "Current instruction in the WB: ";  WB_gui.printHuman(); std::cout << std::endl; 
             
     cout << "\n\tALU_RV\t\tBU_RV \t\tLSU_RV" << endl;
     for (int i = 0; i < MAX_RV_SIZE; i++){
@@ -418,7 +452,6 @@ void run(){
     if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
 
     outputAllMemory(amount_of_instruction_memory_to_output);
-
 
     std::string foo;
     while (!(systemHaltFlag && AllEUsAndRVsEmpty())) {
@@ -479,51 +512,12 @@ void fetch(){
 
 
     }
-       
 }
 
-
-/*
-template<typename T>
-void OffLoadRVIntoEU(T* ExecutionUnit, std::deque<DecodedInstruction>* ReservationStation){
-     // If the EUs are free, then we can off load the RVs into the EUs
-    for (ALU* a : ALUs){
-        if (a->In.state == BLOCK){
-            // We run through ever entry in the RV, if it is blocking there might be an entry in the RAW table which can help us 
-            a->In = HazardDetectionUnit->CheckForRAW(a->In);
-        }
-
-        if (a->In.state == CURRENT){
-            // If the In-instruction for this EU is BLOCKING or CURRENTLY running then we do not d anything
-            
-            continue;
-
-        } else if (a->In.state == EMPTY ){//|| a->In.state == NEXT){
-            
-            // If the ALU is not EMPTY then we can check if the last instruction in there is ready to be NEXT 
-            if (!ReservationStation.empty()){
-                if (ReservationStation.front().state == NEXT){
-                    // If the instruction in the RV is ready to be NEXT, then it is loaded into the ALU
-
-                    // LOAD INTO ALU
-                    a->In = ReservationStation.front();
-                    ALU_RV.pop_front();
-
-                    cout << "Instruction " << a->In.asString << " loaded into the ALU" << (int) (std::find(ALUs.begin(), ALUs.end(), a) - ALUs.begin()) << ". Decoded instruction: "; a->In.print();
-                }
-            }
-        } else {
-            cout << "Instruction in the ALU has gone mad!!! - INSTRUCTION HAS STATE NEXT!!!" << endl;
-        }
-    }
-
-
-}*/
-
 void ForwardResultsToRVs(){
-    for (DecodedInstruction a : ALU_RV) a = CheckBothRegistersAreValidForFurtherExecution(a);      
-    for (DecodedInstruction b : BU_RV ) b = CheckBothRegistersAreValidForFurtherExecution(b);
-    for (DecodedInstruction l : LSU_RV) l = CheckBothRegistersAreValidForFurtherExecution(l);
+    for (int i = 0; i < ALU_RV.size(); i++) ALU_RV.at(i) = CheckBothRegistersAreValidForFurtherExecution(ALU_RV.at(i)); 
+    for (int i = 0; i < BU_RV.size(); i++)   BU_RV.at(i) = CheckBothRegistersAreValidForFurtherExecution(BU_RV.at(i)); 
+    for (int i = 0; i < LSU_RV.size(); i++) LSU_RV.at(i) = CheckBothRegistersAreValidForFurtherExecution(LSU_RV.at(i)); 
 }
 
 void OffLoadingReservationStations(){
@@ -637,7 +631,7 @@ void decodeIssue(){
         else {
             // Decode() cannot be run with no inputs and so we return
 
-            IDI_inst[i] = "";
+            IDI_gui[i] = DecodedInstruction();
             continue;
         }
 
@@ -652,13 +646,14 @@ void decodeIssue(){
         // Throws error if there isn't any instruction to be loaded
         if (splitCIR.size() == 0) throw std::invalid_argument("No instruction loaded");
         
+        // Debugging/GUI
+        parsedInst.SplitInst = splitCIR;
+
         // Load the register values into the ALU's input
         if (splitCIR.size() > 1) {
             // Get set first/destination register
             if (splitCIR.at(1).substr(0 ,1).compare("r")  == 0 ) {
                 parsedInst.rd = strToRegister(splitCIR.at(1)); 
-
-                parsedInst.DEST = parsedInst.rd;
                 //ALUD = parsedInst.rd;
             }
             //else if (splitCIR.at(1).substr(0, 2).compare("FP") == 0)  ALUD = (FP_Register) stoi(splitCIR.at(1).substr(1, splitCIR.at(1).length()));
@@ -685,27 +680,7 @@ void decodeIssue(){
             }
         }
 
-        // Here we apply register renaming FOR THE DESTINATIONS REGISTER
-        if (CheckIfWriteOnly(parsedInst)){
-            int Prd = GetUnusedRegisterInPRF();
 
-            // If there are no usable registers in the PRF then we cannot continue and so the IF/IDI register must block
-            if (Prd == -1){
-                IF_IDI[i].state = BLOCK;
-
-                IDI_inst[i] = "";
-                continue;
-            } else {
-                // Create entry in ARF_To_PRF
-                ARF_To_PRF[parsedInst.rd] = Prd;
-
-                // Make the register nonvalid as it is currently being written too
-                PhysRegisterFile.at(Prd).second = false;
-
-                // Replace the ARF register in the instruction with the new PRF one
-                parsedInst.rd = Prd;               
-            }
-        }
 
 
         // SET WRTEBACK TO TRUE AS DEFAULT
@@ -730,9 +705,9 @@ void decodeIssue(){
         else if (splitCIR.at(0).compare("LID")  == 0) parsedInst.OpCode = LID;
         else if (splitCIR.at(0).compare("LDA")  == 0) parsedInst.OpCode = LDA;
         
-        else if (splitCIR.at(0).compare("STO")  == 0) { parsedInst.OpCode = STO; parsedInst.DEST = PhysRegisterFile.at(ARF_To_PRF[parsedInst.rd]).first; parsedInst.IsWriteBack = false; }//ArchRegisterFile.at(strToRegister(splitCIR.at(1))); parsedInst.IsWriteBack = false; }
+        else if (splitCIR.at(0).compare("STO")  == 0) { parsedInst.OpCode = STO; parsedInst.IsWriteBack = false; }//ArchRegisterFile.at(strToRegister(splitCIR.at(1))); parsedInst.IsWriteBack = false; }
         else if (splitCIR.at(0).compare("STOI") == 0) { parsedInst.OpCode = STOI; parsedInst.IMM = stoi(splitCIR.at(1)); parsedInst.IsWriteBack = false; }
-        else if (splitCIR.at(0).compare("STOA") == 0) { parsedInst.OpCode = STOA; parsedInst.DEST = PhysRegisterFile.at(ARF_To_PRF[parsedInst.rd]).first; parsedInst.IsWriteBack = false; }
+        else if (splitCIR.at(0).compare("STOA") == 0) { parsedInst.OpCode = STOA; parsedInst.IsWriteBack = false; }
 
         else if (splitCIR.at(0).compare("AND")  == 0) parsedInst.OpCode = AND;
         else if (splitCIR.at(0).compare("OR")   == 0) parsedInst.OpCode = OR;
@@ -740,11 +715,11 @@ void decodeIssue(){
         else if (splitCIR.at(0).compare("LSHFT")== 0) parsedInst.OpCode = LSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
         else if (splitCIR.at(0).compare("RSHFT")== 0) parsedInst.OpCode = RSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
 
-        else if (splitCIR.at(0).compare("JMP")  == 0) { parsedInst.OpCode = JMP; parsedInst.DEST = PhysRegisterFile.at(ARF_To_PRF[parsedInst.rd]).first; parsedInst.IsWriteBack = false; }
-        else if (splitCIR.at(0).compare("JMPI") == 0) { parsedInst.OpCode = JMPI; parsedInst.DEST = PhysRegisterFile.at(ARF_To_PRF[parsedInst.rd]).first; parsedInst.IsWriteBack = false; }
-        else if (splitCIR.at(0).compare("BNE")  == 0) { parsedInst.OpCode = BNE; parsedInst.DEST = PhysRegisterFile.at(ARF_To_PRF[parsedInst.rd]).first; parsedInst.IsWriteBack = false; }
-        else if (splitCIR.at(0).compare("BPO")  == 0) { parsedInst.OpCode = BPO; parsedInst.DEST = PhysRegisterFile.at(ARF_To_PRF[parsedInst.rd]).first; parsedInst.IsWriteBack = false; }
-        else if (splitCIR.at(0).compare("BZ")   == 0) { parsedInst.OpCode = BZ; parsedInst.DEST = PhysRegisterFile.at(ARF_To_PRF[parsedInst.rd]).first; parsedInst.IsWriteBack = false; }
+        else if (splitCIR.at(0).compare("JMP")  == 0) { parsedInst.OpCode = JMP; parsedInst.IsWriteBack = false; }
+        else if (splitCIR.at(0).compare("JMPI") == 0) { parsedInst.OpCode = JMPI; parsedInst.IsWriteBack = false; }
+        else if (splitCIR.at(0).compare("BNE")  == 0) { parsedInst.OpCode = BNE; parsedInst.IsWriteBack = false; }
+        else if (splitCIR.at(0).compare("BPO")  == 0) { parsedInst.OpCode = BPO; parsedInst.IsWriteBack = false; }
+        else if (splitCIR.at(0).compare("BZ")   == 0) { parsedInst.OpCode = BZ; parsedInst.IsWriteBack = false; }
 
         else if (splitCIR.at(0).compare("HALT") == 0) { parsedInst.OpCode = HALT; parsedInst.IsWriteBack = false; }
         else if (splitCIR.at(0).compare("NOP")  == 0) { parsedInst.OpCode = NOP; parsedInst.IsWriteBack = false; }
@@ -755,18 +730,80 @@ void decodeIssue(){
         else throw std::invalid_argument("Unidentified Instruction: " + splitCIR.at(0));
 
 
+        
+        //////////////////////////////
+        ////////// RENAMING //////////
+        //////////////////////////////
+
+        parsedInst.state = NEXT;
+        
+        // Rename and get the values for the new instruction
+        parsedInst = RegisterRenameValidityCheck(parsedInst);
+
+        // Here we apply register renaming FOR THE DESTINATIONS REGISTER
+        if (parsedInst.rd != -1){
+            if (parsedInst.IsWriteBack){
+                if (parsedInst.rd != parsedInst.rs0 && parsedInst.rd != parsedInst.rs1){
+                    int Prd = GetUnusedRegisterInPRF();
+
+                    cout << "Prd: " << Prd << endl;
+
+                    // If there are no usable registers in the PRF then we cannot continue and so the IF/IDI register must block
+                    if (Prd == -1){
+                        cout << "This is happening" << endl;
+                        IF_IDI[i].state = BLOCK;
+
+                        IDI_gui[i] = DecodedInstruction();
+                        continue;
+                        
+                    } else {
+                        // Create entry in ARF_To_PRF
+                        ARF_To_PRF[parsedInst.rd] = Prd;
+
+                        // Make the register nonvalid as it is currently being written too
+                        PhysRegisterFile.at(Prd).second = false;
+
+                        // Replace the ARF register in the instruction with the new PRF one
+                        parsedInst.rd = Prd;               
+                    }
+                } else {
+                    // In the case where it is not ONLY a write to the destination register - we use the map from the ARF to the PRF as the PRF reg
+                    parsedInst.rd = ARF_To_PRF[parsedInst.rd];
+                }
+
+                // Both use the DEST as just the straight rd
+                parsedInst.DEST = parsedInst.rd;
+
+
+            } else {
+                // This covers the register renaming cases for when the instruction doesn't write back to the destination register but instead uses it in another way
+                parsedInst.rd = ARF_To_PRF[parsedInst.rd];
+                parsedInst.DEST = PhysRegisterFile.at(parsedInst.rd).first;
+
+
+                if (!IsRegisterValidForExecution(&parsedInst.rd, &parsedInst.DEST)){
+                    parsedInst.state = BLOCK;
+                } else; // We either BLOCK or NEXT depending on the validity of the other registers
+            }
+        }  
+
+
+
+
+
+
+
+
+
         // SUPER IMPORTANT - THIS IS THE PREVIOUS VALUE OF THE PC TO USE THE CORRECT OLD VALUE OF IT AND NOT THE NEW VALUE
         parsedInst.OUT = IF_IDI[i].PC;     // It is only set to the PC for the single instruction JMPI (indexed JMP)
            
         // Debuggin/GUI
         parsedInst.asString = IF_IDI[i].instruction;
-        IDI_inst[i] = parsedInst.asString;
+        IDI_gui[i] = parsedInst;
 
         // instruction set to NEXT here as the RegisterRenameValidityCheck(.) line updates it to BLOCK if required
-        parsedInst.state = NEXT;
-
-        // Rename and get the values for the new instruction
-        parsedInst = RegisterRenameValidityCheck(parsedInst);
+        //parsedInst.state = NEXT;
 
 
         std::cout << "Instruction " << ID_I_Inst.asString << " in IDI decoded: "; ID_I_Inst.print();
@@ -805,7 +842,9 @@ void decodeIssue(){
             // Check if there is any space in the RVs
             if (BU_RV.size() >= MAX_RV_SIZE){
                 // the ALU's RV is full and so we have to set the ID_I_Inst to BLOCKING
-                ID_I_Inst.state = BLOCK;
+                IF_IDI[i].state = BLOCK;
+                parsedInst.state = BLOCK;
+
             } else {
                 // HERE THERE IS SPACE IN THE ALU_RV AND SO WE CAN ISSUE AN INSTRUCTION TO IT
                 // Here we push out new parsed/decoded inst into the RV and we can set the previously undecoded instruction to EMPTY
@@ -825,7 +864,9 @@ void decodeIssue(){
              // Check if there is any space in the RVs
             if (LSU_RV.size() >= MAX_RV_SIZE){
                 // the ALU's RV is full and so we have to set the ID_I_Inst to BLOCKING
-                ID_I_Inst.state = BLOCK;
+                IF_IDI[i].state = BLOCK;
+                parsedInst.state = BLOCK;
+
             } else {
                 // HERE THERE IS SPACE IN THE ALU_RV AND SO WE CAN ISSUE AN INSTRUCTION TO IT
                 // Here we push out new parsed/decoded inst into the RV and we can set the previously undecoded instruction to EMPTY
@@ -850,7 +891,7 @@ void decodeIssue(){
     OffLoadingReservationStations();
 
     // Now we can remove any writtenback entries in the RAW_Table
-    //HazardDetectionUnit->RemoveAnyWrittenBackValues();
+    HazardDetectionUnit->ClearRAW_Table();
 }
 
 // Executes the current instruction
@@ -863,15 +904,15 @@ void execute(){
                 a->In.state = CURRENT;
 
                 // Debugging/GUI
-                a->Inst = a->In.asString;
+                a->currentInst = a->In;
 
                 // Actually run the bad boi
                 a->cycle();
             } 
             else if (a->In.state == CURRENT) a->cycle();
-            else if (a->In.state == EMPTY) a->Inst = "";
+            else if (a->In.state == EMPTY)  a->currentInst = DecodedInstruction();
         }
-        else a->Inst = "";
+        else a->currentInst = DecodedInstruction();
     }
 
     // Running and setting the debugging values for the execution of the BU
@@ -882,15 +923,15 @@ void execute(){
                 b->In.state = CURRENT;
 
                 // Debugging/GUI
-                b->Inst = b->In.asString;
+                b->currentInst = b->In;
 
                 // Actually run the bad boi
                 b->cycle();
             }
             else if (b->In.state == CURRENT) b->cycle();
-            else if (b->In.state == EMPTY) b->Inst = "";
+            else if (b->In.state == EMPTY) b->currentInst = DecodedInstruction();
         }
-        else b->Inst = "";
+        else b->currentInst = DecodedInstruction();
     }
     
     // Running and setting the debugging values for the execution of the LSU
@@ -901,15 +942,15 @@ void execute(){
                 l->In.state = CURRENT;
 
                 // Debugging/GUI
-                l->Inst = l->In.asString;
+                l->currentInst = l->In;
 
                 // Actually run the bad boi
                 l->cycle();
             }
             else if (l->In.state == CURRENT) l->cycle();
-            else if (l->In.state == EMPTY) l->Inst = "";
+            else if (l->In.state == EMPTY) l->currentInst = DecodedInstruction();
         }
-        else l->Inst = "";
+        else l->currentInst = DecodedInstruction();
     } 
 }
 
@@ -919,7 +960,7 @@ void writeBack(){
     
     // Need to handle the correct writeback order so that WAWs dont occur
 
-    WB_inst = "";
+    WB_gui = DecodedInstruction();
 
     // unpack data from each ALU if there exists an instruciton in their output 
     for (ALU* a : ALUs){
@@ -930,14 +971,15 @@ void writeBack(){
             a->Out.state = CURRENT;
 
             std::cout << "Write back to index: " << a->Out.DEST << " with value: " << a->Out.OUT << std::endl;
-            PhysRegisterFile[a->Out.DEST].first = a->Out.OUT;
-            PhysRegisterFile[a->Out.DEST].second = true;
+            PhysRegisterFile.at(a->Out.DEST).first = a->Out.OUT;
+            PhysRegisterFile.at(a->Out.DEST).second = true;
             //HazardDetectionUnit->SetWritebackFlag(a->Out);
 
             a->Out.state = EMPTY;
 
             // Debugging/GUI
-            WB_inst = a->Inst;
+            WB_gui = a->Out;
+            WB_gui.state = NEXT;    // LEGIT ONLY USED TO MAKE THE GUI SHOW UP
         }
         else ;// Do Nothing as the instruction is EMPTY
     }
@@ -963,7 +1005,8 @@ void writeBack(){
             b->Out.state = EMPTY;
 
             // Debugging/GUI
-            WB_inst = b->Inst;
+            WB_gui = b->Out;
+            WB_gui.state = NEXT;    // LEGIT ONLY USED TO MAKE THE GUI SHOW UP
         }
     }
 
@@ -986,10 +1029,10 @@ void writeBack(){
             l->Out.state = EMPTY;
 
             // Debugging/GUI
-            WB_inst = l->Inst;
+            WB_gui = l->Out;
+            WB_gui.state = NEXT;    // LEGIT ONLY USED TO MAKE THE GUI SHOW UP
         }
     }
-
 }
 
 #pragma endregion F/D/E/M/W/

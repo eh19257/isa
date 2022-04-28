@@ -114,6 +114,8 @@ struct DecodedInstruction {
     bool IsWriteBack = true;   // Default IS writeback
     Instruction OpCode;         // OP code of the instruction
     
+    std::vector<std::string> SplitInst;
+    
     int rd = -1;    // Actual register used in instruction for destination       - Used to fight RAW hazards
     int rs0 = -1;   // Actual register used in instruction for source register 0 - Used to fight RAW hazards
     int rs1 = -1;   // Actual register used in instruction for source register 1 - Used to fight RAW hazards
@@ -126,6 +128,36 @@ struct DecodedInstruction {
 
     void print(){
         std::cout << "RD: " << rd << " DEST: " << DEST << " RS0: " << rs0 << " IN0: " << IN0 << " RS1: " << rs1 << " IN1: " << IN1 << " IMM: " << IMM << " OUT: " << OUT << std::endl;
+    }
+
+    void printHuman(){
+        if (this->state == EMPTY){
+            std::cout << "\t"; 
+        } else {
+            std::cout << SplitInst.at(0) << " ";
+            for (int i = 1; i < SplitInst.size() && i < 4; i++){
+                if (i == 1){
+                    if (OpCode == STOI) {
+                        std::cout << this->IMM << " ";
+                    } else {
+                        std::cout << "PR" << this->rd << " ";
+                    }
+                } 
+                else if (i == 2){
+                    if (this->rs0 == -1) {
+                        std::cout << this->IMM << " ";
+                    } else {
+                        std::cout << "PR" << this->rs0 << " ";
+                    }
+                } else if (i == 3){
+                    if (this->rs1 == -1){
+                        std::cout << this->IMM << " ";
+                    } else {
+                        std::cout << "PR" << this->rs1 << " ";
+                    }
+                }
+            }
+        }
     }
 
 };
