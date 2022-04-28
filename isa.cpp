@@ -445,7 +445,6 @@ void cycle(){
     numOfCycles++;
 }
 
-
 // Running the processor
 void run(){
     // Print memory before running the program
