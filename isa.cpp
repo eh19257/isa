@@ -119,7 +119,16 @@ void writeBack();
 void flushPipeline();
 bool AllEUsAndRVsEmpty();
 void initialisePRF();
-DecodedInstruction SourceRegistersRenamed(DecodedInstruction inst);
+
+/* DecodedIssue helpers */
+void ForwardResultsToRVs();
+void OffLoadingReservationStations();
+
+bool CheckIfWriteOnly(DecodedInstruction inst);
+int GetUnusedRegisterInPRF();
+bool IsRegisterValidForExecution(int* reg, int* val);
+DecodedInstruction RegisterRenameValidityCheck(DecodedInstruction inst);
+
 
 /* Non-ISA function headers */
 void loadProgramIntoMemory();
@@ -289,49 +298,67 @@ int GetUnusedRegisterInPRF(){
     // NOt srue if bool intialises as true by default but im too braindead to work it out
     while (!PhysRegisterFile.at(count).second){
         count++;
+        cout << "Count = " << count << "Shouldn't be >= " << PhysRegisterFile.size() << endl;
     }
     return count;
 }
 
-bool IsUsedRegisterValid(int* reg, int* val){
-    
 
+// Returns true if this reg is valid for execution/use
+bool IsRegisterValidForExecution(int* reg, int* val){
+    if (*reg == -1) return true;
+
+    // If the valid bit is true
+    if (PhysRegisterFile.at(*reg).second){
+        return true;
+    } else {
+        // If the valid bit is not true then we can check the RAW/result forwarding table for an entry
+        // If an entry is found, then it will return true (as it is valid) and then also update the value for the instruction
+        return HazardDetectionUnit->CheckRAW_TableForForwardedValues(reg, val);
+    }
 }
 
+// Checks if an instruction's validity based on the validity of the 2 source registers (returned inst can BLOCK or NEXT)
+DecodedInstruction CheckBothRegistersAreValidForFurtherExecution(DecodedInstruction inst){
+    bool IsRs0Valid = IsRegisterValidForExecution(&inst.rs0, &inst.IN0);
+    bool IsRs1Valid = IsRegisterValidForExecution(&inst.rs1, &inst.IN1);
 
-DecodedInstruction SourceRegistersRenamed(DecodedInstruction inst){
+    if (IsRs0Valid && IsRs1Valid){
+        inst.state = NEXT;
+    } else {
+        inst.state = BLOCK;
+    }
+
+    return inst;
+}
+
+// Checks both source registers to see if they are valid for further execution
+DecodedInstruction RegisterRenameValidityCheck(DecodedInstruction inst){
     bool IsRs0Valid = true;
     bool IsRs1Valid = true;
 
-    if (inst.rs0 != -1) {
-        // If the register is valid then we set the source register as the new renamed register and we also do the same thing with the value
-        inst.rs0 = ARF_To_PRF[inst.rs0];
+    // if RS0 is a valid register then we can rename rs0
+    if (inst.rs0 != -1){
+        inst.rs0 = ARF_To_PRF[inst.rs0];    // renames rs0
+        inst.IN0 = PhysRegisterFile.at(inst.rs0).first;     // preload in the value in for this register before we check it's validity
 
-        // If this is not a valid regsiter to use - i.e. it is currently being written too, then we have to block and wait on this register
-        if (!PhysRegisterFile.at(inst.rs0).second){
-            IsRs0Valid = HazardDetectionUnit->CheckRAW_TableForForwardedValues(&inst.rs0, &inst.IN0);
-        } 
-        else {
-            // if it is valid then we just use the value that is in the PRF
-            inst.IN0 = PhysRegisterFile.at(inst.rs0).first;
-        }
+        // If this register is valid to be used then it will return true and update the value if necerssary
+        IsRs0Valid = IsRegisterValidForExecution(&inst.rs0, &inst.IN0);
     }
 
-    if (inst.rs1 != -1) {
-        inst.rs1 = ARF_To_PRF[inst.rs1];
-        inst.IN1 = PhysRegisterFile.at(inst.rs1).first;
-    
-        // If this is not a valid regsiter to use - i.e. it is currently being written too, then we have to block and wait on this register
-        if (!PhysRegisterFile.at(inst.rs1).second){
-            IsRs1Valid = HazardDetectionUnit->CheckRAW_TableForForwardedValues(&inst.rs1, &inst.IN1);
-        } 
-        else {
-            // if it is valid then we just use the value that is in the PRF
-            inst.IN1 = PhysRegisterFile.at(inst.rs1).first;
-        }       
+    // if RS0 is a valid register then we can rename rs0
+    if (inst.rs1 != -1){
+        inst.rs1 = ARF_To_PRF[inst.rs1];    // renames rs0
+        inst.IN1 = PhysRegisterFile.at(inst.rs1).first;     // preload in the value in for this register before we check it's validity
+
+        // If this register is valid to be used then it will return true and update the value if necerssary
+        IsRs1Valid = IsRegisterValidForExecution(&inst.rs1, &inst.IN1);
     }
 
-    if ( !(IsRs0Valid && IsRs1Valid)){
+    //if one of them is not valid then we MUST BLOCK this instruction
+    if ( IsRs0Valid && IsRs1Valid ){
+        inst.state = NEXT;
+    } else {
         inst.state = BLOCK;
     }
 
@@ -493,7 +520,11 @@ void OffLoadRVIntoEU(T* ExecutionUnit, std::deque<DecodedInstruction>* Reservati
 
 }*/
 
-
+void ForwardResultsToRVs(){
+    for (DecodedInstruction a : ALU_RV) a = CheckBothRegistersAreValidForFurtherExecution(a);      
+    for (DecodedInstruction b : BU_RV ) b = CheckBothRegistersAreValidForFurtherExecution(b);
+    for (DecodedInstruction l : LSU_RV) l = CheckBothRegistersAreValidForFurtherExecution(l);
+}
 
 void OffLoadingReservationStations(){
     ///////////////////////////////////
@@ -504,6 +535,7 @@ void OffLoadingReservationStations(){
     for (ALU* a : ALUs){
         if (a->In.state == BLOCK){
             // We run through ever entry in the RV, if it is blocking there might be an entry in the RAW table which can help us 
+            
             //a->In = HazardDetectionUnit->CheckForRAW(a->In);
         }
 
@@ -730,13 +762,12 @@ void decodeIssue(){
         parsedInst.asString = IF_IDI[i].instruction;
         IDI_inst[i] = parsedInst.asString;
 
-        // Check for RAW HAZARDS and use the renamed registers where necerssary
+        // instruction set to NEXT here as the RegisterRenameValidityCheck(.) line updates it to BLOCK if required
         parsedInst.state = NEXT;
 
-
         // Rename and get the values for the new instruction
+        parsedInst = RegisterRenameValidityCheck(parsedInst);
 
-        parsedInst = SourceRegistersRenamed(parsedInst);
 
         std::cout << "Instruction " << ID_I_Inst.asString << " in IDI decoded: "; ID_I_Inst.print();
 
@@ -813,7 +844,9 @@ void decodeIssue(){
 
     }
 
-
+    // Any forwarded results are given to the instructions that are in the RVs
+    ForwardResultsToRVs();
+    // Offloads an instruciton from one RV into their respective EU
     OffLoadingReservationStations();
 
     // Now we can remove any writtenback entries in the RAW_Table
@@ -897,7 +930,8 @@ void writeBack(){
             a->Out.state = CURRENT;
 
             std::cout << "Write back to index: " << a->Out.DEST << " with value: " << a->Out.OUT << std::endl;
-            ArchRegisterFile[a->Out.DEST] = a->Out.OUT;
+            PhysRegisterFile[a->Out.DEST].first = a->Out.OUT;
+            PhysRegisterFile[a->Out.DEST].second = true;
             //HazardDetectionUnit->SetWritebackFlag(a->Out);
 
             a->Out.state = EMPTY;
@@ -943,7 +977,8 @@ void writeBack(){
 
 
             if (l->Out.IsWriteBack) {
-                ArchRegisterFile[l->Out.DEST] = l->Out.OUT;
+                PhysRegisterFile[l->Out.DEST].first = l->Out.OUT;
+                PhysRegisterFile[l->Out.DEST].second = true;
                 //HazardDetectionUnit->SetWritebackFlag(l->Out);
                 std::cout << "Write back to index: " << l->Out.DEST << " with value: " << l->Out.OUT << std::endl;
             }
