@@ -44,7 +44,7 @@ enum Instruction {
 };
 
 /* Registers */
-enum Register { R0, R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13, R14, R15, X }; // X acts a dummy regsiter - doesn't exist but acts as a way to have uniform structure to all instructions that the ISA uses
+enum Register { R0, R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13, R14, R15}; // X acts a dummy regsiter - doesn't exist but acts as a way to have uniform structure to all instructions that the ISA uses
 enum FP_Register {FP0, FP1, FP2, FP3};
 
 
@@ -114,9 +114,9 @@ struct DecodedInstruction {
     bool IsWriteBack = true;   // Default IS writeback
     Instruction OpCode;         // OP code of the instruction
     
-    Register rd = X;    // Actual register used in instruction for destination       - Used to fight RAW hazards
-    Register rs0 = X;   // Actual register used in instruction for source register 0 - Used to fight RAW hazards
-    Register rs1 = X;   // Actual register used in instruction for source register 1 - Used to fight RAW hazards
+    int rd = -1;    // Actual register used in instruction for destination       - Used to fight RAW hazards
+    int rs0 = -1;   // Actual register used in instruction for source register 0 - Used to fight RAW hazards
+    int rs1 = -1;   // Actual register used in instruction for source register 1 - Used to fight RAW hazards
 
     int DEST;       // Destination for the instruction  (optional) 
     int IN0;        // Input 1                          (optional)

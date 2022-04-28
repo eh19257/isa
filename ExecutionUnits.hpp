@@ -17,13 +17,14 @@ class HDU;
 
 // Hazard Dection Unit (HDU) - used for deteciton RAW hazards
 class HDU {
+    /*
     private:
         std::vector<std::tuple<Register, Optional<int>, bool>> RAW_Table;
 
         // Returns true if there is a RAW clash
         bool checkForRegisterClashInRAWTable(std::vector<std::tuple<Register, Optional<int>, bool>>* RAW, int* val, Register* reg){
             // returns false in the case an X is found - X is a dummy register that is only used to make the instructions follow a 3 operand form
-            if (*reg == X) {
+            if (*reg == -1) {
                 std::cout << "DUMMY REG X DETECTED" << std::endl;
                 return false;
             }
@@ -50,7 +51,7 @@ class HDU {
         
         void loadInstInToRAW_Table(DecodedInstruction inst){
             // Check if the inst is a write back instruction
-            if (inst.IsWriteBack == true && inst.rd != X){
+            if (inst.IsWriteBack == true && inst.rd != -1){
                 std::cout << "entry in RAW TABLE create for: " << inst.asString << std::endl;
                 RAW_Table.push_back( std::make_tuple(inst.rd, Optional<int>(), false) );
             }
@@ -130,9 +131,50 @@ class HDU {
                 }
             }
         }
+        */
+    
+    private:
+        std::vector<std::pair<int, int>> RAW_Table;
+
+        // returns true is reg is still waiting (respective instruction should be blocked)
+        bool CheckRAW_TableForIndividualValues(int* reg, int* val){
+            if (*reg == -1) return false;
+
+            for (int i = 0; i < RAW_Table.size(); i++){
+                if (*reg == RAW_Table.at(i).first){
+                    *val = RAW_Table.at(i).second;
+
+                    return false;
+                }
+            }
+            return true;
+        }
+    
+    public:
 
         HDU(){
 
+        }
+
+        // Returns false if no entry for reg was found in the RAW table
+        bool CheckRAW_TableForForwardedValues(int* reg, int* val){
+            if (*reg == -1) return true;
+
+            for (int i = 0; i < RAW_Table.size(); i++){
+                if (*reg == RAW_Table.at(i).first) {
+                    *val = RAW_Table.at(i).second;
+                    return true;
+                }
+            }
+            return false;
+        }
+    
+        void ForwardResult(DecodedInstruction inst){
+            RAW_Table.push_back(std::pair<int, int>(inst.rd, inst.OUT));
+        }
+
+        void ClearRAW_Table(){
+            RAW_Table = std::vector<std::pair<int, int>>();
         }
 };
 
@@ -254,7 +296,7 @@ class ALU : public ExecutionUnit{
         }
 
         // Load the output into the correct row in the RAW table
-        this->HazardDetectionUnit->LoadDestinationValueIntoRAWTable(this->Out);
+        this->HazardDetectionUnit->ForwardResult(this->Out);
 
         this->Out.state = NEXT;
         this->In.state = EMPTY;
@@ -352,7 +394,7 @@ class BU : public ExecutionUnit{
         }
 
         // Load the output into the correct row in the RAW table
-        this->HazardDetectionUnit->LoadDestinationValueIntoRAWTable(this->Out);
+        this->HazardDetectionUnit->ForwardResult(this->Out);
 
         this->Out.state = NEXT;
         this->In.state = EMPTY;
@@ -446,7 +488,7 @@ class LSU : public ExecutionUnit{
         }
 
         // Load the output into the correct row in the RAW table
-        this->HazardDetectionUnit->LoadDestinationValueIntoRAWTable(this->Out);
+        this->HazardDetectionUnit->ForwardResult(this->Out);
 
         this->Out.state = NEXT;
         this->In.state = EMPTY;
