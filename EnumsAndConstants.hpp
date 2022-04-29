@@ -113,6 +113,8 @@ struct DecodedInstruction {
     InstState state = EMPTY;    // State of the instruction
     bool IsWriteBack = true;   // Default IS writeback
     Instruction OpCode;         // OP code of the instruction
+
+    int sideOfBranch = 0;
     
     std::vector<std::string> SplitInst;
     

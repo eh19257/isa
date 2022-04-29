@@ -174,6 +174,17 @@ class HDU {
             if (inst.IsWriteBack) RAW_Table.push_back(std::pair<int, int>(inst.DEST, inst.OUT));
         }
 
+        void RemoveFromRAWTable(DecodedInstruction inst){
+            if (inst.IsWriteBack && inst.rd != -1){
+                for (int i = 0; i < RAW_Table.size(); i++){
+                    // Here we find and remove it from the table
+                    if (RAW_Table.at(i).first == inst.rd){
+                        RAW_Table.erase(RAW_Table.begin() + i);
+                    }
+                }
+            }
+        }
+
         void ClearRAW_Table(){
             RAW_Table = std::vector<std::pair<int, int>>();
         }
