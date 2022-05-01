@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <utility>
+#include <deque>
 
 #include "EnumsAndConstants.hpp"
 
@@ -16,124 +17,9 @@ class HDU;
 
 
 // Hazard Dection Unit (HDU) - used for deteciton RAW hazards
-class HDU {
-    /*
+class HDU {  
     private:
-        std::vector<std::tuple<Register, Optional<int>, bool>> RAW_Table;
 
-        // Returns true if there is a RAW clash
-        bool checkForRegisterClashInRAWTable(std::vector<std::tuple<Register, Optional<int>, bool>>* RAW, int* val, Register* reg){
-            // returns false in the case an X is found - X is a dummy register that is only used to make the instructions follow a 3 operand form
-            if (*reg == -1) {
-                std::cout << "DUMMY REG X DETECTED" << std::endl;
-                return false;
-            }
-            // Search through the RAW table for any destination regsiters that are in it
-            for (std::tuple<Register, Optional<int>, bool> entry : *RAW){
-                // Here we check if rs0 is trying to read from a rd that hasnt been fully updated yet
-                if (std::get<0>(entry) == *reg){
-                    if (std::get<1>(entry).HasValue()){
-                        // The destination register has been found in the RAW_table and the result has been forwarded
-                        *val = std::get<1>(entry).Value();
-                        std::cout << "Value found in RAW table: " << *val << std::endl;
-                        return false;
-
-                    } else {
-                        // The result hasnt been written back and so we need to block this instruction
-                        return true;
-                    }
-
-                }
-            }
-            // if the rd isn't found in the RAW table then there is no RAW hazard
-            return false;
-        }
-        
-        void loadInstInToRAW_Table(DecodedInstruction inst){
-            // Check if the inst is a write back instruction
-            if (inst.IsWriteBack == true && inst.rd != -1){
-                std::cout << "entry in RAW TABLE create for: " << inst.asString << std::endl;
-                RAW_Table.push_back( std::make_tuple(inst.rd, Optional<int>(), false) );
-            }
-        }
-
-    public:
-
-        void ClearRAWTable(){
-            this->RAW_Table = std::vector<std::tuple<Register, Optional<int>, bool>>();
-        }
-
-        void printRAW(){
-            std::cout << "RAW table:\n\tRegister\t\trd" << std::endl;
-                for (int i = 0; i < RAW_Table.size(); i++){
-                    std::cout << i << "\t" << std::get<0>(RAW_Table.at(i)) << "\t";
-                    if (std::get<1>(RAW_Table.at(i)).HasValue()){
-                        std::cout << std::get<1>(RAW_Table.at(i)).Value();
-                    }
-                    std::cout << std::endl;
-                } 
-                std::cout << "=== RAW table end ==="<< std::endl;
-        }
-
-
-        // Checks if the current instruction is dependent on a write, it also loads the instruction into the RAW table if it also could cause a RAW hazard
-        DecodedInstruction CheckForRAWAndLoad(DecodedInstruction inst){
-            inst = CheckForRAW(inst);
-            loadInstInToRAW_Table(inst);
-
-            return inst;
-        }
-
-        // Used when an instruction is in the RVs, checks BLOCKED instructions for forwarded values and then outputs the updated instruction
-        DecodedInstruction CheckForRAW(DecodedInstruction inst){
-
-            bool Isrs0Block = checkForRegisterClashInRAWTable(&RAW_Table, &inst.IN0, &inst.rs0);
-            bool Isrs1Block = checkForRegisterClashInRAWTable(&RAW_Table, &inst.IN1, &inst.rs1);
-
-            // If either one of these are blocking then we set inst to BLOCK else it's ready to move on
-            if (Isrs0Block || Isrs1Block) {
-                inst.state = BLOCK;
-                std::cout << "RAW hazard detected for instruction: " << inst.asString << " Isrs0Block: " << Isrs0Block << " Isrs1Block: " << Isrs1Block << std::endl;
-            } else {
-                inst.state = NEXT;               
-            }
-
-            return inst;
-        }
-
-        // Loads the result of the instruction into its respective entry within the RAW_Table
-        void LoadDestinationValueIntoRAWTable(DecodedInstruction inst){
-            for (int i = 0; i < RAW_Table.size(); i++){
-                if (std::get<0>(RAW_Table.at(i)) == inst.rd){
-
-                    RAW_Table.at(i) = std::make_tuple(std::get<0>(RAW_Table.at(i)), Optional<int>(inst.OUT), false);
-                    //RAW_Table.at(i).second.Value(inst.OUT);
-                    return;
-                }
-            }
-        }
-
-        // Removes any written back values - i.e. values that have the 3rd part of the RAW_Table entry = true
-        void RemoveAnyWrittenBackValues(){
-            for (int i = 0; i < RAW_Table.size(); i++){
-                // If this rd has been written back - then we can remove it from the table
-                if (std::get<2>(RAW_Table.at(i))){
-                    RAW_Table.erase(RAW_Table.begin() + i);
-                }
-            }
-        }
-
-        // When an instruction is done with writeback, it then flags this entry in the RAW Table as "writtenBack" at the end of this clock cycle it will be removed from the table using RemoveAnyWrittenBackValues()
-        void SetWritebackFlag(DecodedInstruction inst){
-            for (int i = 0; i < RAW_Table.size(); i++){
-                if (std::get<0>(RAW_Table.at(i)) == inst.rd){
-                    RAW_Table.at(i) = std::make_tuple(std::get<0>(RAW_Table.at(i)), std::get<1>(RAW_Table.at(i)), true);
-                }
-            }
-        }
-        */
-    
-    private:
         std::vector<std::pair<int, int>> RAW_Table;
 
         // returns true is reg is still waiting (respective instruction should be blocked)
@@ -191,7 +77,45 @@ class HDU {
 };
 
 
+class ROB {
+    private:
+        // deque used as it is like a circular buffer - DecodedInstruction stores, info about the RD, status of the instruction and the instruction itself
+        //                                            - Optional<int> stores the value (if it exists) of the register
+        std::deque<std::pair<DecodedInstruction, Optional<int>>> ReorderBuffer;
 
+    public:
+        // returns true if the result was successfully loaded into the ROB, returns false if not (note: it should NEVER return false)
+        bool LoadResultIntoROB(DecodedInstruction inst){
+            for (int i = 0; i < ReorderBuffer.size(); i++){
+                std::pair<DecodedInstruction, Optional<int>> entry = ReorderBuffer.at(i);
+
+                if (entry.first.state == CURRENT && entry.first.rd == inst.rd && entry.first.asString == inst.asString && entry.first.IsWriteBack){
+                    ReorderBuffer.at(i).first.state = NEXT;
+                    ReorderBuffer.at(i).second.Value(inst.OUT);
+                    
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // returns true if it was successfully loaded into the ROB, else returns false
+        bool LoadInstructionIntoTheROB(DecodedInstruction inst){
+            if (ReorderBuffer.size() >= MAX_NUMBER_OR_ROB_ENTRIES) {
+                return false;
+            } else {
+                inst.state = CURRENT;
+
+                ReorderBuffer.push_back(std::pair<DecodedInstruction, Optional<int>>(inst, Optional<int>()));
+                return true;
+            }
+        }
+
+
+        ROB(){
+
+        }
+};
 
 // General class for all Components
 class ExecutionUnit{

@@ -171,5 +171,6 @@ const int SIZE_OF_INSTRUCTION_MEMORY = 256;     // size of the read-only instruc
 const int SIZE_OF_DATA_MEMORY = 256;            // pretty much the heap and all
 
 const int MAX_RV_SIZE = 4;
+const int MAX_NUMBER_OR_ROB_ENTRIES = 32;
 
 const int SUPERSCALAR_WIDTH = 1;

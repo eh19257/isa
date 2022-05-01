@@ -96,6 +96,9 @@ std::array<int, SIZE_OF_DATA_MEMORY> dataMemory;
 /* Hazard Detection Units */
 HDU* HazardDetectionUnit = new HDU();
 
+/* Reorder Buffer Unit/handler */
+ROB* ReorderBuffer = new ROB();
+
 /* Execution Units*/
 std::array<ALU*, 2> ALUs = {new ALU(HazardDetectionUnit), new ALU(HazardDetectionUnit)};
 std::array<BU*, 1> BUs = {new BU(HazardDetectionUnit)};
@@ -112,6 +115,7 @@ void decodeIssue();
 void decode();  
 void issue();
 void execute();
+void commit();
 void complete();
 void memoryAccess();
 void writeBack();
@@ -124,6 +128,7 @@ void initialisePRF();
 /* DecodedIssue helpers */
 void ForwardResultsToRVs();
 void OffLoadingReservationStations();
+void issueIntoRV(DecodedInstruction inst, NonDecodedInstruction* addyOfInReg, std::deque<std::pair<DecodedInstruction, int>>* RV);
 
 bool CheckIfWriteOnly(DecodedInstruction inst);
 int GetUnusedRegisterInPRF();
@@ -434,7 +439,7 @@ void cycle(){
     // Pipelined
     //writeBack(); /*complete();*/ execute(); issue(); decode(); fetch();
 
-    writeBack(); execute();  decodeIssue(); fetch();
+    writeBack();/* commit();*/ execute();  decodeIssue(); fetch();
 
     //HazardDetectionUnit->printRAW();
 
@@ -570,6 +575,32 @@ DecodedInstruction GetOldestValidInstruction(DecodedInstruction inst, std::deque
     RV->erase(RV->begin() + indexOfOldestValidInst);
     
     return inst;
+}
+
+void issueIntoRV(DecodedInstruction inst, NonDecodedInstruction* addyOfInReg, std::deque<std::pair<DecodedInstruction, int>>* RV){
+    // Check if there is any space in the RVs
+    if (RV->size() >= MAX_RV_SIZE){
+        // the ALU's RV is full and so we have to set the ID_I_Inst to BLOCKING
+        addyOfInReg->state = BLOCK;
+        inst.state = BLOCK;
+
+        // Needed so that the PRF doesnt get filled with falsely invalid physical registers
+        UndoDestinationRegisterValidity(&inst);
+        
+        // NOTE: Blocking parsedInst wont really do much here but it is done to ensure behaviour follows in any case
+
+    } else {
+        // HERE THERE IS SPACE IN THE ALU_RV AND SO WE CAN ISSUE AN INSTRUCTION TO IT
+        // Here we push out new parsed/decoded inst into the RV and we can set the previously undecoded instruction to EMPTY
+        //parsedInst.state = NEXT;
+
+        RV->push_back(std::pair<DecodedInstruction, int>(inst, -1));
+
+        addyOfInReg->state = EMPTY;
+
+        cout << "Loaded instruction " << inst.asString << " into ALU_RV. Decoded instruction: "; inst.print();
+    }
+
 }
 
 void OffLoadingReservationStations(){
@@ -829,84 +860,32 @@ void decodeIssue(){
         std::cout << "Instruction " << ID_I_Inst.asString << " in IDI decoded: "; ID_I_Inst.print();
 
 
+        // Load instruction into ROB if it isn't full
+        //bool IsParsedInstLoaded = ReorderBuffer->LoadInstructionIntoTheROB(parsedInst);
+        
+
+        //if (!IsParsedInstLoaded)
+
+
+        
+
+
         ////////////////////////////
         ///// ISSUING INTO RVS /////
         ///////////////////////////
 
         // ALU
         if ( (parsedInst.OpCode >= ADD && parsedInst.OpCode <= CMP) || parsedInst.OpCode == MV || (parsedInst.OpCode >= AND && parsedInst.OpCode <= RSHFT) ){
-
-            // Check if there is any space in the RVs
-            if (ALU_RV.size() >= MAX_RV_SIZE){
-                // the ALU's RV is full and so we have to set the ID_I_Inst to BLOCKING
-                IF_IDI[i].state = BLOCK;
-                parsedInst.state = BLOCK;
-
-                // Needed so that the PRF doesnt get filled with falsely invalid physical registers
-                UndoDestinationRegisterValidity(&parsedInst);
-                
-                // NOTE: Blocking parsedInst wont really do much here but it is done to ensure behaviour follows in any case
-
-            } else {
-                // HERE THERE IS SPACE IN THE ALU_RV AND SO WE CAN ISSUE AN INSTRUCTION TO IT
-                // Here we push out new parsed/decoded inst into the RV and we can set the previously undecoded instruction to EMPTY
-                //parsedInst.state = NEXT;
-
-                ALU_RV.push_back(std::pair<DecodedInstruction, int>(parsedInst, -1));
-
-                IF_IDI[i].state = EMPTY;
-
-                cout << "Loaded instruction " << parsedInst.asString << " into ALU_RV. Decoded instruction: "; parsedInst.print();
-            }            
+            issueIntoRV(parsedInst, &IF_IDI[i], &ALU_RV);
         }
         // BU
         else if (parsedInst.OpCode >= JMP && parsedInst.OpCode <= BZ || parsedInst.OpCode == HALT || parsedInst.OpCode == NOP) {
-            
-            // Check if there is any space in the RVs
-            if (BU_RV.size() >= MAX_RV_SIZE){
-                // the ALU's RV is full and so we have to set the ID_I_Inst to BLOCKING
-                IF_IDI[i].state = BLOCK;
-                parsedInst.state = BLOCK;
-
-                // Needed so that the PRF doesnt get filled with falsely invalid physical registers
-                UndoDestinationRegisterValidity(&parsedInst);
-
-            } else {
-                // HERE THERE IS SPACE IN THE ALU_RV AND SO WE CAN ISSUE AN INSTRUCTION TO IT
-                // Here we push out new parsed/decoded inst into the RV and we can set the previously undecoded instruction to EMPTY
-                //parsedInst.state = NEXT;
-
-                BU_RV.push_back(std::pair<DecodedInstruction, int>(parsedInst, -1));
-
-                IF_IDI[i].state = EMPTY;
-                
-                cout << "Loaded instruction " << parsedInst.asString << " into BU_RV. Decoded instruction: "; parsedInst.print();
-            }       
+            issueIntoRV(parsedInst, &IF_IDI[i], &BU_RV);
         }
 
         // LSU
         else if (parsedInst.OpCode >= LD && parsedInst.OpCode <= STOA) {
-
-             // Check if there is any space in the RVs
-            if (LSU_RV.size() >= MAX_RV_SIZE){
-                // the ALU's RV is full and so we have to set the ID_I_Inst to BLOCKING
-                IF_IDI[i].state = BLOCK;
-                parsedInst.state = BLOCK;
-
-                // Needed so that the PRF doesnt get filled with falsely invalid physical registers
-                UndoDestinationRegisterValidity(&parsedInst);
-
-            } else {
-                // HERE THERE IS SPACE IN THE ALU_RV AND SO WE CAN ISSUE AN INSTRUCTION TO IT
-                // Here we push out new parsed/decoded inst into the RV and we can set the previously undecoded instruction to EMPTY
-                //parsedInst.state = NEXT;
-
-                LSU_RV.push_back(std::pair<DecodedInstruction, int>(parsedInst, -1));
-
-                IF_IDI[i].state = EMPTY;
-
-                cout << "Loaded instruction " << parsedInst.asString << " into LSU_RV. Decoded instruction: "; parsedInst.print();
-            }
+            issueIntoRV(parsedInst, &IF_IDI[i], &LSU_RV);
         }  
         else {
             throw std::invalid_argument("Could no issue an unknown instruction: " + ID_I_Inst.OpCode);
@@ -983,6 +962,40 @@ void execute(){
     } 
 }
 
+
+/*
+template<class T, std::size_t SIZE>
+void runThroughEUAndAddToROB(std::array<T*, SIZE> EUs){
+    for (T* e : EUs){
+        // check if ROB is full, if so then we must block e->Out
+        if (ROB.full()){
+            e->Out.state = BLOCK;
+        } else {
+            if (e->Out.state == BLOCK || e->Out.state == NEXT || e->Out.state == CURRENT) {
+                // Again, it should be illegal for an instruction to be CURRENT here
+
+                e->Out.state = NEXT;
+                ROB->LoadResultIntoROB(e->Out);
+                
+                e->Out.state = EMPTY;
+            } else {
+                // e->Out is EMPTY
+
+                continue;
+            }
+        }
+    }
+}
+
+
+// Handles the update of the ROB and will commit any values to the PRF for any instructions that have been completed
+void commit(){
+    runThroughEUAndAddToROB(ALUs);
+    runThroughEUAndAddToROB(BUs);
+    runThroughEUAndAddToROB(LSUs);
+
+
+}*/
 
 // Data written back into register file: Write backs don't occur on STO or HALT (or NOP)
 void writeBack(){
