@@ -158,7 +158,7 @@ string WB_inst = "";
 array<DecodedInstruction, SUPERSCALAR_WIDTH> IF_gui;
 array<DecodedInstruction, SUPERSCALAR_WIDTH> IDI_gui;
 DecodedInstruction EX_gui;
-DecodedInstruction WB_gui;
+vector<DecodedInstruction> WB_gui;
 
 /* Stats variables */
 int numOfCycles = 1;        // Counts the number of cycles (stats at cycle 1 not cycle 0)
@@ -220,7 +220,6 @@ void printArchRegisterFile(int maxReg){
     std::cout << "writeBackFlag: " << writeBackFlag << std::endl;
 }
 
-
 // Outputs all stats here
 void outputStatistics(int numOfCycles){
     if (!PRINT_STATS_FLAG) return;
@@ -235,87 +234,21 @@ void outputStatistics(int numOfCycles){
 
 #pragma endregion debugging
 
-#pragma region F/D/E/M/W/
 
+#pragma region Register Renaming helpers
+
+// Initialises the PRF on startup
 void initialisePRF(){
     for (int i = 0; i < PhysRegisterFile.size(); i++){
         PhysRegisterFile.at(i) = std::pair<int, bool>(0, true);
     }
 }
 
+// Removes reg from PRF/creates a new space for one
 void RemoveFromPRF(DecodedInstruction inst){
     if (inst.IsWriteBack && inst.rd != -1){
         PhysRegisterFile.at(inst.rd).second = true;
     }
-}
-
-// Returns true if all the execution units are empty
-bool AllEUsAndRVsEmpty(){    
-    for (ALU* a : ALUs) {
-        if (a->In.state  != EMPTY) return false;
-        if (a->Out.state != EMPTY) return false;
-    }
-    for (BU* b : BUs) {
-        if (b->In.state  != EMPTY) return false;
-        if (b->Out.state != EMPTY) return false;
-    }
-    for (LSU* l : LSUs) {
-        if (l->In.state  != EMPTY) return false;
-        if (l->Out.state != EMPTY) return false;
-    }
-
-    // Check RVs
-    if (!ALU_RV.empty()) return false;
-    if (!BU_RV.empty() ) return false;
-    if (!LSU_RV.empty()) return false;
-
-    return true;
-}
-
-
-// Flush reservation station if the instruction is on the incorrent sideOfTheBranch
-void flushRV(std::deque<std::pair<DecodedInstruction, int>>* RV, int thisSideOfBranch){
-    for (int i = 0; i < RV->size(); i++){
-        if (RV->at(i).first.sideOfBranch != thisSideOfBranch){
-            // If instruction is writing back to a specific register then we need to remove it from the raw table and also remove the validity flag on the PRF
-            HazardDetectionUnit->RemoveFromRAWTable(RV->at(i).first);
-            RemoveFromPRF(RV->at(i).first);
-
-            RV->erase(RV->begin() + i);
-        }
-    }
-}
-
-void flushPipeline(int thisSideOfBranch){
-    for (int i = 0; i < IF_IDI.size(); i++){
-        IF_IDI[i].state = EMPTY;
-    }
-
-    IF_inst = array<string, SUPERSCALAR_WIDTH>();
-
-    IDI_inst = array<string, SUPERSCALAR_WIDTH>();
-
-    for (int i = 0; i < i; i++){
-        if (ALUs.at(i)->In.sideOfBranch != thisSideOfBranch){
-            ALUs.at(i)->In.state = EMPTY;
-            ALUs.at(i)->currentInst = DecodedInstruction();
-        }
-    }
-    
-    if (BUs.at(0)->In.sideOfBranch != thisSideOfBranch){
-        BUs.at(0)->In.state = EMPTY;
-        BUs.at(0)->currentInst = DecodedInstruction();
-    }
-
-    if (LSUs.at(0)->In.sideOfBranch != thisSideOfBranch){
-        LSUs.at(0)->In.state = EMPTY;
-        LSUs.at(0)->currentInst = DecodedInstruction();
-    }
-
-    // Clean RVs as well and removes any of the instructions from the RAW table and PRF
-    flushRV(&ALU_RV, thisSideOfBranch);
-    flushRV(&BU_RV, thisSideOfBranch);
-    flushRV(&LSU_RV, thisSideOfBranch);
 }
 
 // Checks whether or not an instruction uses a register to write to and only write to - used for register renaming
@@ -373,9 +306,9 @@ bool IsRegisterValidForExecution(int* reg, int* val){
     if (PhysRegisterFile.at(*reg).second){
         return true;
     } else {
-        // If the valid bit is not true then we can check the RAW/result forwarding table for an entry
-        // If an entry is found, then it will return true (as it is valid) and then also update the value for the instruction
-        return HazardDetectionUnit->CheckRAW_TableForForwardedValues(reg, val);
+        // If the valid bit is not true then we can check the ROB for any valid values - this is the newer version of the RAW table
+        // If an entry is found such that the instruction has been completed then it will return true (as it is valid) and then also update the value for the instruction
+        return ReorderBuffer->CheckROBForForwardedValues(reg, val);
     }
 }
 
@@ -426,116 +359,9 @@ DecodedInstruction RegisterRenameValidityCheck(DecodedInstruction inst){
     return inst;
 }
 
-// A single cycle of the processor
-void cycle(){
-    //if (numOfCycles == 26) outputAllMemory(amount_of_instruction_memory_to_output);
-    std::cout << "---------- Cycle " << numOfCycles << " starting ----------"<< std::endl;
-    //std::cout << "PC has current value: " << PC << std::endl;
+#pragma endregion Register Renaming helpers
 
-
-    // Non-pipelined 
-    //fetch(); decode(); issue(); execute(); complete(); writeBack();
-
-    // Pipelined
-    //writeBack(); /*complete();*/ execute(); issue(); decode(); fetch();
-
-    writeBack();/* commit();*/ execute();  decodeIssue(); fetch();
-
-    //HazardDetectionUnit->printRAW();
-
-    cout << "\nCurrent instruction in the IF: " << IF_inst[0] << std::endl;
-    cout << "Current instruction in the IDI: "; IDI_gui[0].printHuman(); std::cout << std::endl;
-    //cout << "Current instruction in the I:  " << I_inst << endl;
-    cout << "Current instruction in ALU0: "; ALUs.at(0)->currentInst.printHuman(); std::cout << "\tALU1: "; ALUs.at(1)->currentInst.printHuman(); std::cout << "\tBU: "; BUs.at(0)->currentInst.printHuman(); std::cout << "\tLSU: "; LSUs.at(0)->currentInst.printHuman(); std::cout << std::endl;
-    cout << "Current instruction in the WB: ";  WB_gui.printHuman(); std::cout << std::endl; 
-            
-    cout << "\n\tALU_RV\t\tBU_RV \t\tLSU_RV" << endl;
-    for (int i = 0; i < MAX_RV_SIZE; i++){
-        cout << i << "\t";
-        if (ALU_RV.size() <= i) cout << "\t\t";
-        else { ALU_RV.at(i).first.printHuman(); cout << " ::" << ALU_RV.at(i).first.state << "\t"; }
-
-        if (BU_RV.size() <= i) cout << "\t\t";
-        else { BU_RV.at(i).first.printHuman(); cout << " ::" << BU_RV.at(i).first.state << "\t"; }
-    
-        if (LSU_RV.size() <= i) cout << "\t\t";
-        else { LSU_RV.at(i).first.printHuman(); cout << " ::" << LSU_RV.at(i).first.state << "\t"; }
-        
-        cout << endl;
-    }
-
-    cout << "\n\n" << endl;
-    if (PRINT_REGISTERS_FLAG) printArchRegisterFile(26);
-    if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
-
-    std::cout << "---------- Cycle " << numOfCycles << " completed. ----------\n"<< std::endl;
-    numOfCycles++;
-}
-
-// Running the processor
-void run(){
-    // Print memory before running the program
-    if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
-
-    outputAllMemory(amount_of_instruction_memory_to_output);
-
-    std::string foo;
-    while (!(systemHaltFlag && AllEUsAndRVsEmpty())) {
-        cycle();        
-        if (SINGLE_STEP_FLAG) std::cin >> foo;
-    }
-
-    outputAllMemory(amount_of_instruction_memory_to_output);
-
-    std::cout << "Program has been halted\n" << std::endl;
-
-    // Print the memory after the program has been ran
-    //if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
-    if (PRINT_STATS_FLAG) outputStatistics(numOfCycles);
-}
-
-// Fetches the next instruction that is to be ran, this instruction is fetched by taking the PCs index 
-void fetch(){
-
-    // Run through every channel of the processor
-    for (int i = 0; i < IF_IDI.size(); i++){
-
-        if (IF_IDI[i].state == BLOCK || IF_IDI[i].state == CURRENT){
-                // We cannot collect any instructions from memory and pass it into IF_ID_Inst
-                cout << "Fetch() BLOCKED" << endl;
-                continue;
-            }
-        // else if IF_ID_Inst.state = NEXT or EMPTY - it shouldnt be equal to NEXT here but we check anyway
-
-        IF_IDI[i].state = CURRENT;
-        
-        // Load the memory address that is in the instruction memory address that is pointed to by the PC
-        IF_IDI[i].instruction = instrMemory.at(PC);
-
-        PC++;
-
-        // Debugging/GUI to show the current instr in the processor
-        IF_inst[i] = IF_IDI[i].instruction;
-
-        if (IF_IDI[i].instruction.empty()) {
-            IF_IDI[i].state = EMPTY;
-            return;
-        } else {
-            // If it is not empty then we have successfully fetched the instruction
-            IF_IDI[i].state = NEXT;
-
-            std::cout << "CIR has current value: " << IF_IDI[i].instruction << std::endl;
-        }
-
-        // INCORRECT \/\/
-        /* We DO NOT UPDATE the PC here but instead we do it in the DECODE stage as this will help with pipelining branches later on */
-        // Instead of incrementing the PC here we could use a NPC which is used by MIPS and stores the next sequential PC
-        // Increment PC
-        //pc++; 
-
-
-    }
-}
+#pragma region Reservation Station helpers
 
 void ForwardResultsToRVs(){
     for (int i = 0; i < ALU_RV.size(); i++) {
@@ -681,6 +507,195 @@ void OffLoadingReservationStations(){
     }   
 }
 
+#pragma endregion Reservation Station helpers
+
+#pragma region pipline flushing
+
+// Returns true if all the execution units are empty
+bool AllEUsAndRVsEmpty(){    
+    for (ALU* a : ALUs) {
+        if (a->In.state  != EMPTY) return false;
+        if (a->Out.state != EMPTY) return false;
+    }
+    for (BU* b : BUs) {
+        if (b->In.state  != EMPTY) return false;
+        if (b->Out.state != EMPTY) return false;
+    }
+    for (LSU* l : LSUs) {
+        if (l->In.state  != EMPTY) return false;
+        if (l->Out.state != EMPTY) return false;
+    }
+
+    // Check RVs
+    if (!ALU_RV.empty()) return false;
+    if (!BU_RV.empty() ) return false;
+    if (!LSU_RV.empty()) return false;
+
+    return true;
+}
+
+// Flush reservation station if the instruction is on the incorrent sideOfTheBranch
+void flushRV(std::deque<std::pair<DecodedInstruction, int>>* RV, int thisSideOfBranch){
+    for (int i = 0; i < RV->size(); i++){
+        if (RV->at(i).first.sideOfBranch != thisSideOfBranch){
+            // If instruction is writing back to a specific register then we need to remove it from the raw table and also remove the validity flag on the PRF
+            HazardDetectionUnit->RemoveFromRAWTable(RV->at(i).first);
+            RemoveFromPRF(RV->at(i).first);
+
+            RV->erase(RV->begin() + i);
+        }
+    }
+}
+
+// Flushes the whole pipline
+void flushPipeline(int thisSideOfBranch){
+    for (int i = 0; i < IF_IDI.size(); i++){
+        IF_IDI[i].state = EMPTY;
+    }
+
+    IF_inst = array<string, SUPERSCALAR_WIDTH>();
+
+    IDI_inst = array<string, SUPERSCALAR_WIDTH>();
+
+    for (int i = 0; i < i; i++){
+        if (ALUs.at(i)->In.sideOfBranch != thisSideOfBranch){
+            ALUs.at(i)->In.state = EMPTY;
+            ALUs.at(i)->currentInst = DecodedInstruction();
+        }
+    }
+    
+    if (BUs.at(0)->In.sideOfBranch != thisSideOfBranch){
+        BUs.at(0)->In.state = EMPTY;
+        BUs.at(0)->currentInst = DecodedInstruction();
+    }
+
+    if (LSUs.at(0)->In.sideOfBranch != thisSideOfBranch){
+        LSUs.at(0)->In.state = EMPTY;
+        LSUs.at(0)->currentInst = DecodedInstruction();
+    }
+
+    // Clean RVs as well and removes any of the instructions from the RAW table and PRF
+    flushRV(&ALU_RV, thisSideOfBranch);
+    flushRV(&BU_RV, thisSideOfBranch);
+    flushRV(&LSU_RV, thisSideOfBranch);
+}
+
+#pragma endregion pipline flushing
+
+#pragma region F/D/E/M/W/
+
+
+
+// A single cycle of the processor
+void cycle(){
+    //if (numOfCycles == 26) outputAllMemory(amount_of_instruction_memory_to_output);
+    std::cout << "---------- Cycle " << numOfCycles << " starting ----------"<< std::endl;
+    //std::cout << "PC has current value: " << PC << std::endl;
+
+
+    // Non-pipelined 
+    //fetch(); decode(); issue(); execute(); complete(); writeBack();
+
+    // Pipelined
+    //writeBack(); /*complete();*/ execute(); issue(); decode(); fetch();
+
+    writeBack(); commit(); execute();  decodeIssue(); fetch();
+
+    //HazardDetectionUnit->printRAW();
+
+    cout << "\nCurrent instruction in the IF: " << IF_inst[0] << std::endl;
+    cout << "Current instruction in the IDI: "; IDI_gui[0].printHuman(); std::cout << std::endl;
+    //cout << "Current instruction in the I:  " << I_inst << endl;
+    cout << "Current instruction in ALU0: "; ALUs.at(0)->currentInst.printHuman(); std::cout << "\tALU1: "; ALUs.at(1)->currentInst.printHuman(); std::cout << "\tBU: "; BUs.at(0)->currentInst.printHuman(); std::cout << "\tLSU: "; LSUs.at(0)->currentInst.printHuman(); std::cout << std::endl;
+    cout << "Current instruction in the WB: ";  if (!WB_gui.empty()) WB_gui.at(0).printHuman(); std::cout << std::endl; 
+            
+    cout << "\n\tALU_RV\t\tBU_RV \t\tLSU_RV" << endl;
+    for (int i = 0; i < MAX_RV_SIZE; i++){
+        cout << i << "\t";
+        if (ALU_RV.size() <= i) cout << "\t\t";
+        else { ALU_RV.at(i).first.printHuman(); cout << " ::" << ALU_RV.at(i).first.state << "\t"; }
+
+        if (BU_RV.size() <= i) cout << "\t\t";
+        else { BU_RV.at(i).first.printHuman(); cout << " ::" << BU_RV.at(i).first.state << "\t"; }
+    
+        if (LSU_RV.size() <= i) cout << "\t\t";
+        else { LSU_RV.at(i).first.printHuman(); cout << " ::" << LSU_RV.at(i).first.state << "\t"; }
+        
+        cout << endl;
+    }
+
+    cout << "\n\n" << endl;
+    if (PRINT_REGISTERS_FLAG) printArchRegisterFile(26);
+    if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
+
+    std::cout << "---------- Cycle " << numOfCycles << " completed. ----------\n"<< std::endl;
+    numOfCycles++;
+}
+
+// Running the processor
+void run(){
+    // Print memory before running the program
+    if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
+
+    outputAllMemory(amount_of_instruction_memory_to_output);
+
+    std::string foo;
+    while (!(systemHaltFlag && AllEUsAndRVsEmpty())) {
+        cycle();        
+        if (SINGLE_STEP_FLAG) std::cin >> foo;
+    }
+
+    outputAllMemory(amount_of_instruction_memory_to_output);
+
+    std::cout << "Program has been halted\n" << std::endl;
+
+    // Print the memory after the program has been ran
+    //if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
+    if (PRINT_STATS_FLAG) outputStatistics(numOfCycles);
+}
+
+// Fetches the next instruction that is to be ran, this instruction is fetched by taking the PCs index 
+void fetch(){
+
+    // Run through every channel of the processor
+    for (int i = 0; i < IF_IDI.size(); i++){
+
+        if (IF_IDI[i].state == BLOCK || IF_IDI[i].state == CURRENT){
+                // We cannot collect any instructions from memory and pass it into IF_ID_Inst
+                cout << "Fetch() BLOCKED" << endl;
+                continue;
+            }
+        // else if IF_ID_Inst.state = NEXT or EMPTY - it shouldnt be equal to NEXT here but we check anyway
+
+        IF_IDI[i].state = CURRENT;
+        
+        // Load the memory address that is in the instruction memory address that is pointed to by the PC
+        IF_IDI[i].instruction = instrMemory.at(PC);
+
+        PC++;
+
+        // Debugging/GUI to show the current instr in the processor
+        IF_inst[i] = IF_IDI[i].instruction;
+
+        if (IF_IDI[i].instruction.empty()) {
+            IF_IDI[i].state = EMPTY;
+            return;
+        } else {
+            // If it is not empty then we have successfully fetched the instruction
+            IF_IDI[i].state = NEXT;
+
+            std::cout << "CIR has current value: " << IF_IDI[i].instruction << std::endl;
+        }
+
+        // INCORRECT \/\/
+        /* We DO NOT UPDATE the PC here but instead we do it in the DECODE stage as this will help with pipelining branches later on */
+        // Instead of incrementing the PC here we could use a NPC which is used by MIPS and stores the next sequential PC
+        // Increment PC
+        //pc++; 
+
+
+    }
+}
 
 // Combined Instruction Decode with Issue
 void decodeIssue(){
@@ -785,12 +800,12 @@ void decodeIssue(){
 
         else throw std::invalid_argument("Unidentified Instruction: " + splitCIR.at(0));
 
-
         
         //////////////////////////////
         ////////// RENAMING //////////
         //////////////////////////////
 
+        // state = NEXT here as it is easier to just overwrite it later on with BLOCK if needed
         parsedInst.state = NEXT;
         
         // Rename and get the values for the new instruction
@@ -861,35 +876,32 @@ void decodeIssue(){
 
 
         // Load instruction into ROB if it isn't full
-        //bool IsParsedInstLoaded = ReorderBuffer->LoadInstructionIntoTheROB(parsedInst);
+        bool IsParsedInstLoaded = ReorderBuffer->LoadInstructionIntoTheROB(parsedInst);
         
 
-        //if (!IsParsedInstLoaded)
+        if (!IsParsedInstLoaded) {
+            ////////////////////////////
+            ///// ISSUING INTO RVS /////
+            ///////////////////////////
 
+            // ALU
+            if ( (parsedInst.OpCode >= ADD && parsedInst.OpCode <= CMP) || parsedInst.OpCode == MV || (parsedInst.OpCode >= AND && parsedInst.OpCode <= RSHFT) ){
+                issueIntoRV(parsedInst, &IF_IDI[i], &ALU_RV);
+            }
+            // BU
+            else if (parsedInst.OpCode >= JMP && parsedInst.OpCode <= BZ || parsedInst.OpCode == HALT || parsedInst.OpCode == NOP) {
+                issueIntoRV(parsedInst, &IF_IDI[i], &BU_RV);
+            }
 
-        
-
-
-        ////////////////////////////
-        ///// ISSUING INTO RVS /////
-        ///////////////////////////
-
-        // ALU
-        if ( (parsedInst.OpCode >= ADD && parsedInst.OpCode <= CMP) || parsedInst.OpCode == MV || (parsedInst.OpCode >= AND && parsedInst.OpCode <= RSHFT) ){
-            issueIntoRV(parsedInst, &IF_IDI[i], &ALU_RV);
+            // LSU
+            else if (parsedInst.OpCode >= LD && parsedInst.OpCode <= STOA) {
+                issueIntoRV(parsedInst, &IF_IDI[i], &LSU_RV);
+            }  
+            else {
+                throw std::invalid_argument("Could no issue an unknown instruction: " + ID_I_Inst.OpCode);
+            }
         }
-        // BU
-        else if (parsedInst.OpCode >= JMP && parsedInst.OpCode <= BZ || parsedInst.OpCode == HALT || parsedInst.OpCode == NOP) {
-            issueIntoRV(parsedInst, &IF_IDI[i], &BU_RV);
-        }
 
-        // LSU
-        else if (parsedInst.OpCode >= LD && parsedInst.OpCode <= STOA) {
-            issueIntoRV(parsedInst, &IF_IDI[i], &LSU_RV);
-        }  
-        else {
-            throw std::invalid_argument("Could no issue an unknown instruction: " + ID_I_Inst.OpCode);
-        }
 
     }
 
@@ -899,7 +911,7 @@ void decodeIssue(){
     OffLoadingReservationStations();
 
     // Now we can remove any writtenback entries in the RAW_Table
-    HazardDetectionUnit->ClearRAW_Table();
+    //HazardDetectionUnit->ClearRAW_Table();
 }
 
 // Executes the current instruction
@@ -963,19 +975,19 @@ void execute(){
 }
 
 
-/*
+
 template<class T, std::size_t SIZE>
 void runThroughEUAndAddToROB(std::array<T*, SIZE> EUs){
     for (T* e : EUs){
         // check if ROB is full, if so then we must block e->Out
-        if (ROB.full()){
+        if (ReorderBuffer->full()){
             e->Out.state = BLOCK;
         } else {
             if (e->Out.state == BLOCK || e->Out.state == NEXT || e->Out.state == CURRENT) {
                 // Again, it should be illegal for an instruction to be CURRENT here
 
                 e->Out.state = NEXT;
-                ROB->LoadResultIntoROB(e->Out);
+                ReorderBuffer->LoadResultIntoROB(e->Out);
                 
                 e->Out.state = EMPTY;
             } else {
@@ -993,17 +1005,31 @@ void commit(){
     runThroughEUAndAddToROB(ALUs);
     runThroughEUAndAddToROB(BUs);
     runThroughEUAndAddToROB(LSUs);
-
-
-}*/
+}
 
 // Data written back into register file: Write backs don't occur on STO or HALT (or NOP)
 void writeBack(){
     
     // Need to handle the correct writeback order so that WAWs dont occur
 
-    WB_gui = DecodedInstruction();
+    WB_gui = vector<DecodedInstruction>();
 
+    // Cycle though the ROB and if the instructions at the front are complete then we commit/retire them
+    while (!ReorderBuffer->empty() && ReorderBuffer->ReorderBuffer.front().first.state == NEXT){
+        std::pair<DecodedInstruction, Optional<int>> entry = ReorderBuffer->ReorderBuffer.front();
+
+        if (entry.first.state == NEXT){
+
+            if (entry.second.HasValue() && entry.first.IsWriteBack){
+                PhysRegisterFile.at(entry.first.DEST).first = entry.first.OUT;
+                PhysRegisterFile.at(entry.first.DEST).second = true;
+            }
+
+            ReorderBuffer->ReorderBuffer.pop_front();
+        }
+    }
+
+    /*
     // unpack data from each ALU if there exists an instruciton in their output 
     for (ALU* a : ALUs){
         if (a->Out.state == NEXT || a->Out.state == BLOCK) {// a->Out.state == CURRENT){
@@ -1075,6 +1101,7 @@ void writeBack(){
             WB_gui.state = NEXT;    // LEGIT ONLY USED TO MAKE THE GUI SHOW UP
         }
     }
+    */
 }
 
 #pragma endregion F/D/E/M/W/

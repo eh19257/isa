@@ -78,12 +78,12 @@ class HDU {
 
 
 class ROB {
-    private:
+    public:
         // deque used as it is like a circular buffer - DecodedInstruction stores, info about the RD, status of the instruction and the instruction itself
         //                                            - Optional<int> stores the value (if it exists) of the register
         std::deque<std::pair<DecodedInstruction, Optional<int>>> ReorderBuffer;
 
-    public:
+
         // returns true if the result was successfully loaded into the ROB, returns false if not (note: it should NEVER return false)
         bool LoadResultIntoROB(DecodedInstruction inst){
             for (int i = 0; i < ReorderBuffer.size(); i++){
@@ -110,7 +110,36 @@ class ROB {
                 return true;
             }
         }
+    
+         // Returns false if an an entry was found in the ROB and it has not completed excution
+        bool CheckROBForForwardedValues(int* reg, int* val){
+            for (int i = 0; i < ReorderBuffer.size(); i++){
+                if (ReorderBuffer.at(i).first.rd == *reg && ReorderBuffer.at(i).first.IsWriteBack){
+                    if (ReorderBuffer.at(i).first.state == NEXT && ReorderBuffer.at(i).second.HasValue()){
+                        
+                        // Update the value and then return true (it has been found and successfully updated and therefore it is valid)
+                        *val = ReorderBuffer.at(i).second.Value();
+                        return true;
 
+                    } else {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        // returns true if the ROB is full
+        bool full(){
+            if (ReorderBuffer.size() >= MAX_NUMBER_OR_ROB_ENTRIES) return true;
+            return false;
+        }
+
+        // returns true if empty()
+        bool empty(){
+            if (ReorderBuffer.size() <= 0) return true;
+            return false;
+        }
 
         ROB(){
 
@@ -233,7 +262,7 @@ class ALU : public ExecutionUnit{
         }
 
         // Load the output into the correct row in the RAW table
-        this->HazardDetectionUnit->ForwardResult(this->Out);
+        //this->HazardDetectionUnit->ForwardResult(this->Out);
 
         this->Out.state = NEXT;
         this->In.state = EMPTY;
@@ -331,7 +360,7 @@ class BU : public ExecutionUnit{
         }
 
         // Load the output into the correct row in the RAW table
-        this->HazardDetectionUnit->ForwardResult(this->Out);
+        //this->HazardDetectionUnit->ForwardResult(this->Out);
 
         this->Out.state = NEXT;
         this->In.state = EMPTY;
@@ -425,7 +454,7 @@ class LSU : public ExecutionUnit{
         }
 
         // Load the output into the correct row in the RAW table
-        this->HazardDetectionUnit->ForwardResult(this->Out);
+        //this->HazardDetectionUnit->ForwardResult(this->Out);
 
         this->Out.state = NEXT;
         this->In.state = EMPTY;
