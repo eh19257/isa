@@ -276,7 +276,10 @@ class BU : public ExecutionUnit{
         bool branchFlag = false;    // True is there is going to be a branch - default = no branch
         bool haltFlag = false;
 
-    BU(HDU* haz) : ExecutionUnit(haz){
+        int* PC;
+
+    BU(HDU* haz, int* pointToPC) : ExecutionUnit(haz){
+        PC = pointToPC;
     }
 
     void cycle(){
@@ -293,68 +296,73 @@ class BU : public ExecutionUnit{
 
         switch(In.OpCode){
             case JMP:
-            Out.OUT = In.DEST;//registerFile[BUD];      // Again as in STO, is accessing the register file at this point illegal?
+                Out.OUT = In.DEST;//registerFile[BUD];      // Again as in STO, is accessing the register file at this point illegal?
 
-            branchFlag = true;
+                branchFlag = true;
+                *PC = Out.OUT;
 
-            ///* STATS */ numOfBranches++;
-            //cout << "BRANCH" << endl;
-            break;
+                ///* STATS */ numOfBranches++;
+                //cout << "BRANCH" << endl;
+                break;
 
-        case JMPI:
-            Out.OUT = In.OUT + In.DEST;//registerFile[BUD]; // WARNING ERROR HERE
+            case JMPI:
+                Out.OUT = In.OUT + In.DEST;//registerFile[BUD]; // WARNING ERROR HERE
 
-            branchFlag = true;
+                branchFlag = true;
+                *PC = Out.OUT;
+                
+                ///* STATS */ numOfBranches++;
+                //cout << "BRANCH" << endl;
+                break;
+
+            case BNE:
+                if (In.IN0 < 0) {
+                    Out.OUT = In.DEST;//PC = registerFile[BUD];
+                    
+                    branchFlag = true;
+                    *PC = Out.OUT;
+
+                    ///* STATS */ numOfBranches++;
+                    //cout << "BRANCH" << endl;
+                }
+                break;
+
+            case BPO:
+                if (In.IN0 > 0) {
+                    Out.OUT = In.DEST;//PC = registerFile[BUD];
+                    
+                    branchFlag = true;
+                    *PC = Out.OUT;
+
+                    ///* STATS */ numOfBranches++;
+                    //cout << "BRANCH" << endl;
+                }
+                break;
+
+            case BZ:
+                if (In.IN0 == 0) {
+                    Out.OUT = In.DEST;//PC = registerFile[BUD];
+                    
+                    branchFlag = true;
+                    *PC = Out.OUT;
+
+                    ///* STATS */ numOfBranches++;
+                    //cout << "BRANCH" << endl; 
+                }
+                break;
             
-            ///* STATS */ numOfBranches++;
-            //cout << "BRANCH" << endl;
-            break;
+            case HALT:                   // #####################
+                this->haltFlag = true;
+                break;
 
-        case BNE:
-            if (In.IN0 < 0) {
-                Out.OUT = In.DEST;//PC = registerFile[BUD];
-                
-                branchFlag = true;
-
-                ///* STATS */ numOfBranches++;
-                //cout << "BRANCH" << endl;
-            }
-            break;
-
-        case BPO:
-            if (In.IN0 > 0) {
-                Out.OUT = In.DEST;//PC = registerFile[BUD];
-                
-                branchFlag = true;
-
-                ///* STATS */ numOfBranches++;
-                //cout << "BRANCH" << endl;
-            }
-            break;
-
-        case BZ:
-            if (In.IN0 == 0) {
-                Out.OUT = In.DEST;//PC = registerFile[BUD];
-                
-                branchFlag = true;
-
-                ///* STATS */ numOfBranches++;
-                //cout << "BRANCH" << endl; 
-            }
-            break;
+            case NOP:
+                std::cout << "NOP EXECUTED!!!" << std::endl;
+                //int foo;
+                //std::cin >> foo;
+                break;
         
-        case HALT:                   // #####################
-            this->haltFlag = true;
-            break;
-
-        case NOP:
-            std::cout << "NOP EXECUTED!!!" << std::endl;
-            //int foo;
-            //std::cin >> foo;
-            break;
-        
-        default:
-            throw std::invalid_argument("BU cannot execute instruction: " + In.OpCode);
+            default:
+                throw std::invalid_argument("BU cannot execute instruction: " + In.OpCode);
         }
 
         // Load the output into the correct row in the RAW table

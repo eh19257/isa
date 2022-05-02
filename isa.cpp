@@ -101,7 +101,7 @@ ROB* ReorderBuffer = new ROB();
 
 /* Execution Units*/
 std::array<ALU*, 2> ALUs = {new ALU(HazardDetectionUnit), new ALU(HazardDetectionUnit)};
-std::array<BU*, 1> BUs = {new BU(HazardDetectionUnit)};
+std::array<BU*, 1> BUs = {new BU(HazardDetectionUnit, &PC)};
 std::array<LSU*, 1> LSUs = {new LSU(HazardDetectionUnit, &dataMemory)};
 
 /* Reservation Stations */
@@ -169,7 +169,7 @@ int numOfBubbles = 0;
 /* Tracking Variables */
 int IndexOfLastRegisterUsedInPRF = -1;
 int currentSideOfBranch = 0;            // A global variable that keeps track of which side of the branch the instruction is on
-const int maxNumberOfBranchSides = 2;         // In the case of a branch taken, then we need to flush out all of the incorrect instructions in the pipeline
+//const //int maxNumberOfBranchSides = 2;         // In the case of a branch taken, then we need to flush out all of the incorrect instructions in the pipeline
                                         // We can keep track of which side of the branch we are in by using this currentSideOfBranch variable. On intialisation, we give each of
                                         // the instructions a number associated with the side of the branch. If the instruction is a branch then we increment this global value.
                                         // When we flush the pipline, we remove the instructions which have a different sideOfBranch as the BRANCH instruction
@@ -540,11 +540,11 @@ bool AllEUsAndRVsEmpty(){
 }
 
 // Flush reservation station if the instruction is on the incorrent sideOfTheBranch
-void flushRV(std::deque<std::pair<DecodedInstruction, int>>* RV, int thisSideOfBranch){
+void flushRV(std::deque<std::pair<DecodedInstruction, int>>* RV, int sideOfBranchToRemove){
     for (int i = 0; i < RV->size(); i++){
-        if (RV->at(i).first.sideOfBranch != thisSideOfBranch){
+        if (RV->at(i).first.sideOfBranch == sideOfBranchToRemove){
             // If instruction is writing back to a specific register then we need to remove it from the raw table and also remove the validity flag on the PRF
-            HazardDetectionUnit->RemoveFromRAWTable(RV->at(i).first);
+            //HazardDetectionUnit->RemoveFromRAWTable(RV->at(i).first);
             RemoveFromPRF(RV->at(i).first);
 
             RV->erase(RV->begin() + i);
@@ -562,27 +562,40 @@ void flushPipeline(int thisSideOfBranch){
 
     IDI_inst = array<string, SUPERSCALAR_WIDTH>();
 
-    for (int i = 0; i < i; i++){
-        if (ALUs.at(i)->In.sideOfBranch != thisSideOfBranch){
+    int sideOfBranchToRemove = (thisSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES;
+    // Flush the ALUs (if need)
+    for (int i = 0; i < NUMBER_OF_ALU; i++){
+        if (ALUs.at(i)->In.sideOfBranch == sideOfBranchToRemove){
             ALUs.at(i)->In.state = EMPTY;
             ALUs.at(i)->currentInst = DecodedInstruction();
         }
     }
-    
-    if (BUs.at(0)->In.sideOfBranch != thisSideOfBranch){
-        BUs.at(0)->In.state = EMPTY;
-        BUs.at(0)->currentInst = DecodedInstruction();
+    // Flush the BUs (if needed)
+    for (int i = 0; i < NUMBER_OF_BU; i++){
+        if (BUs.at(i)->In.sideOfBranch == sideOfBranchToRemove){
+            BUs.at(i)->In.state = EMPTY;
+            BUs.at(i)->currentInst = DecodedInstruction();
+        }
     }
-
-    if (LSUs.at(0)->In.sideOfBranch != thisSideOfBranch){
-        LSUs.at(0)->In.state = EMPTY;
-        LSUs.at(0)->currentInst = DecodedInstruction();
+    // Flush the LSUs (if needed)
+    for (int i = 0; i < NUMBER_OF_LSU; i++){
+        if (LSUs.at(i)->In.sideOfBranch == sideOfBranchToRemove){
+            LSUs.at(i)->In.state = EMPTY;
+            LSUs.at(i)->currentInst = DecodedInstruction();
+        }
     }
 
     // Clean RVs as well and removes any of the instructions from the RAW table and PRF
-    flushRV(&ALU_RV, thisSideOfBranch);
-    flushRV(&BU_RV, thisSideOfBranch);
-    flushRV(&LSU_RV, thisSideOfBranch);
+    flushRV(&ALU_RV, sideOfBranchToRemove);
+    flushRV(&BU_RV, sideOfBranchToRemove);
+    flushRV(&LSU_RV, sideOfBranchToRemove);
+
+
+    // Clean the ROB
+    while (ReorderBuffer->ReorderBuffer.back().first.sideOfBranch == sideOfBranchToRemove){
+        // REMOVE entry from ROB
+        ReorderBuffer->ReorderBuffer.pop_back();
+    }
 }
 
 #pragma endregion pipline flushing
@@ -798,11 +811,11 @@ void decodeIssue(){
         else if (splitCIR.at(0).compare("LSHFT")== 0) parsedInst.OpCode = LSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
         else if (splitCIR.at(0).compare("RSHFT")== 0) parsedInst.OpCode = RSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
 
-        else if (splitCIR.at(0).compare("JMP")  == 0) { parsedInst.OpCode = JMP; parsedInst.IsWriteBack = false; currentSideOfBranch = (currentSideOfBranch + 1) % maxNumberOfBranchSides; }
-        else if (splitCIR.at(0).compare("JMPI") == 0) { parsedInst.OpCode = JMPI; parsedInst.IsWriteBack = false; currentSideOfBranch = (currentSideOfBranch + 1) % maxNumberOfBranchSides; }
-        else if (splitCIR.at(0).compare("BNE")  == 0) { parsedInst.OpCode = BNE; parsedInst.IsWriteBack = false; currentSideOfBranch = (currentSideOfBranch + 1) % maxNumberOfBranchSides; }
-        else if (splitCIR.at(0).compare("BPO")  == 0) { parsedInst.OpCode = BPO; parsedInst.IsWriteBack = false; currentSideOfBranch = (currentSideOfBranch + 1) % maxNumberOfBranchSides; }
-        else if (splitCIR.at(0).compare("BZ")   == 0) { parsedInst.OpCode = BZ; parsedInst.IsWriteBack = false; currentSideOfBranch = (currentSideOfBranch + 1) % maxNumberOfBranchSides; }
+        else if (splitCIR.at(0).compare("JMP")  == 0) { parsedInst.OpCode = JMP; parsedInst.IsWriteBack = false; currentSideOfBranch = (currentSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES; }
+        else if (splitCIR.at(0).compare("JMPI") == 0) { parsedInst.OpCode = JMPI; parsedInst.IsWriteBack = false; currentSideOfBranch = (currentSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES; }
+        else if (splitCIR.at(0).compare("BNE")  == 0) { parsedInst.OpCode = BNE; parsedInst.IsWriteBack = false; currentSideOfBranch = (currentSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES; }
+        else if (splitCIR.at(0).compare("BPO")  == 0) { parsedInst.OpCode = BPO; parsedInst.IsWriteBack = false; currentSideOfBranch = (currentSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES; }
+        else if (splitCIR.at(0).compare("BZ")   == 0) { parsedInst.OpCode = BZ; parsedInst.IsWriteBack = false; currentSideOfBranch = (currentSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES; }
 
         else if (splitCIR.at(0).compare("HALT") == 0) { parsedInst.OpCode = HALT; parsedInst.IsWriteBack = false; }
         else if (splitCIR.at(0).compare("NOP")  == 0) { parsedInst.OpCode = NOP; parsedInst.IsWriteBack = false; }
@@ -852,6 +865,8 @@ void decodeIssue(){
                 } else {
                     // In the case where it is not ONLY a write to the destination register - we use the map from the ARF to the PRF as the PRF reg
                     parsedInst.rd = ARF_To_PRF[parsedInst.rd];
+
+                    PhysRegisterFile.at(parsedInst.rd).second = false;
                 }
 
                 // Both use the DEST as just the straight rd
@@ -961,6 +976,9 @@ void execute(){
 
                 // Actually run the bad boi
                 b->cycle();
+
+                if (b->branchFlag) flushPipeline(b->In.sideOfBranch);
+
             }
             else if (b->In.state == CURRENT) b->cycle();
             else if (b->In.state == EMPTY) b->currentInst = DecodedInstruction();
@@ -1045,80 +1063,6 @@ void writeBack(){
 
         ReorderBuffer->ReorderBuffer.pop_front();
     }
-
-    /*
-    // unpack data from each ALU if there exists an instruciton in their output 
-    for (ALU* a : ALUs){
-        if (a->Out.state == NEXT || a->Out.state == BLOCK) {// a->Out.state == CURRENT){
-            // It should be illegal for the instruction to be CURRENTLY running here but if it does then we would just ignore that write it back
-
-            // We first set the state here to CURRENT out of principle (and just in case we exapnd this any further in the future)
-            a->Out.state = CURRENT;
-
-            std::cout << "Write back to index: " << a->Out.DEST << " with value: " << a->Out.OUT << std::endl;
-            PhysRegisterFile.at(a->Out.DEST).first = a->Out.OUT;
-            PhysRegisterFile.at(a->Out.DEST).second = true;
-            //HazardDetectionUnit->SetWritebackFlag(a->Out);
-
-            a->Out.state = EMPTY;
-
-            // Debugging/GUI
-            WB_gui = a->Out;
-            WB_gui.state = NEXT;    // LEGIT ONLY USED TO MAKE THE GUI SHOW UP
-        }
-        else ;// Do Nothing as the instruction is EMPTY
-    }
-
-    // upack data from each BU, if there exists an instruction in their output
-    for (BU* b : BUs){
-        if (b->Out.state == NEXT || b->Out.state == BLOCK){// || b->Out.state == CURRENT){
-            // It should be illegal for the instruction to be CURRENTLY running here but if it does then we would just ignore that write it back
-            
-            // We first set the state here to CURRENT out of principle (and just in case we exapnd this any further in the future)
-            b->Out.state = CURRENT;
-
-            // Set halt flag here
-            systemHaltFlag = b->haltFlag;
-
-            if (b->branchFlag) {
-                PC = b->Out.OUT;
-
-                flushPipeline(b->Out.sideOfBranch);
-                std::cout << "@Write back. PC now equals: " << PC << std::endl;
-            }
-             
-            b->Out.state = EMPTY;
-
-            // Debugging/GUI
-            WB_gui = b->Out;
-            WB_gui.state = NEXT;    // LEGIT ONLY USED TO MAKE THE GUI SHOW UP
-        }
-    }
-
-    // upack data from each BU, if there exists an instruction in their output
-    for (LSU* l : LSUs){
-        if (l->Out.state == NEXT || l->Out.state == BLOCK){// || l->Out.state == CURRENT){
-            // It should be illegal for the instruction to be CURRENTLY running here but if it does then we would just ignore that write it back
-            
-            // We first set the state here to CURRENT out of principle (and just in case we exapnd this any further in the future)
-            l->Out.state = CURRENT;
-
-
-            if (l->Out.IsWriteBack) {
-                PhysRegisterFile[l->Out.DEST].first = l->Out.OUT;
-                PhysRegisterFile[l->Out.DEST].second = true;
-                //HazardDetectionUnit->SetWritebackFlag(l->Out);
-                std::cout << "Write back to index: " << l->Out.DEST << " with value: " << l->Out.OUT << std::endl;
-            }
-
-            l->Out.state = EMPTY;
-
-            // Debugging/GUI
-            WB_gui = l->Out;
-            WB_gui.state = NEXT;    // LEGIT ONLY USED TO MAKE THE GUI SHOW UP
-        }
-    }
-    */
 }
 
 #pragma endregion F/D/E/M/W/
