@@ -268,8 +268,8 @@ int GetUnusedRegisterInPRF(){
     
     while (foo < ((int) PhysRegisterFile.size() - 1)) {
         foo = foo + 1;
-        cout << "foo: " << foo << endl;
         if (PhysRegisterFile.at(foo).second) {
+            cout << "foo: " << foo << endl;
             IndexOfLastRegisterUsedInPRF = foo;
             return IndexOfLastRegisterUsedInPRF;
         }
@@ -279,6 +279,7 @@ int GetUnusedRegisterInPRF(){
     while (bar < IndexOfLastRegisterUsedInPRF){
         bar = bar + 1;
         if (PhysRegisterFile.at(bar).second) {
+            cout << "bar: " << foo << endl;
             IndexOfLastRegisterUsedInPRF = bar;
             return IndexOfLastRegisterUsedInPRF;
         }
@@ -403,9 +404,11 @@ DecodedInstruction GetOldestValidInstruction(DecodedInstruction inst, std::deque
     return inst;
 }
 
-void issueIntoRV(DecodedInstruction inst, NonDecodedInstruction* addyOfInReg, std::deque<std::pair<DecodedInstruction, int>>* RV){
+void issueIntoRV(DecodedInstruction inst, NonDecodedInstruction* addyOfInReg, std::deque<std::pair<DecodedInstruction, int>>* RV, int maxSizeForThisRV){
     // Check if there is any space in the RVs
-    if (RV->size() >= MAX_RV_SIZE){
+    if ((int) RV->size() >= maxSizeForThisRV){
+
+        cout << "RV->size() >= maxSizeOFThisRV" << endl;
         // the ALU's RV is full and so we have to set the ID_I_Inst to BLOCKING
         addyOfInReg->state = BLOCK;
         inst.state = BLOCK;
@@ -418,7 +421,9 @@ void issueIntoRV(DecodedInstruction inst, NonDecodedInstruction* addyOfInReg, st
     } else {
         // HERE THERE IS SPACE IN THE ALU_RV AND SO WE CAN ISSUE AN INSTRUCTION TO IT
         // Here we push out new parsed/decoded inst into the RV and we can set the previously undecoded instruction to EMPTY
-        //parsedInst.state = NEXT;
+        inst.state = NEXT;
+
+        cout << "THIS IS TASTY" << endl;
 
         RV->push_back(std::pair<DecodedInstruction, int>(inst, -1));
 
@@ -721,7 +726,12 @@ void decodeIssue(){
         
         // Throws error if there isn't any instruction to be loaded
         if (splitCIR.size() == 0) throw std::invalid_argument("No instruction loaded");
-        
+
+
+        //////////////////////////////////////////////////////////
+        ///// Get architectural registers of the instruction /////
+        //////////////////////////////////////////////////////////
+
         // Debugging/GUI
         parsedInst.SplitInst = splitCIR;
 
@@ -749,7 +759,9 @@ void decodeIssue(){
         }
 
 
-
+        //////////////////
+        ///// Decode /////
+        //////////////////
 
         // SET WRTEBACK TO TRUE AS DEFAULT
         parsedInst.IsWriteBack = true;
@@ -758,7 +770,7 @@ void decodeIssue(){
         parsedInst.sideOfBranch = currentSideOfBranch;
 
         // if statement for decoding all instructions
-            if (splitCIR.at(0).compare("ADD")  == 0) parsedInst.OpCode = ADD;
+             if (splitCIR.at(0).compare("ADD")  == 0) parsedInst.OpCode = ADD;
         else if (splitCIR.at(0).compare("ADDI") == 0) { parsedInst.OpCode = ADDI; parsedInst.IMM = stoi(splitCIR.at(3)); }
         else if (splitCIR.at(0).compare("ADDF") == 0) parsedInst.OpCode = ADDF;
         else if (splitCIR.at(0).compare("SUB")  == 0) parsedInst.OpCode = SUB;
@@ -876,26 +888,28 @@ void decodeIssue(){
 
 
         // Load instruction into ROB if it isn't full
-        bool IsParsedInstLoaded = ReorderBuffer->LoadInstructionIntoTheROB(parsedInst);
+        bool IsParsedInstLoadedIntoROB = ReorderBuffer->LoadInstructionIntoTheROB(parsedInst);
         
 
-        if (!IsParsedInstLoaded) {
+        if (IsParsedInstLoadedIntoROB) {
             ////////////////////////////
             ///// ISSUING INTO RVS /////
             ///////////////////////////
 
+            cout << "IS this being run?" << endl;
+
             // ALU
             if ( (parsedInst.OpCode >= ADD && parsedInst.OpCode <= CMP) || parsedInst.OpCode == MV || (parsedInst.OpCode >= AND && parsedInst.OpCode <= RSHFT) ){
-                issueIntoRV(parsedInst, &IF_IDI[i], &ALU_RV);
+                issueIntoRV(parsedInst, &IF_IDI[i], &ALU_RV, MAX_RV_SIZE);
             }
             // BU
             else if (parsedInst.OpCode >= JMP && parsedInst.OpCode <= BZ || parsedInst.OpCode == HALT || parsedInst.OpCode == NOP) {
-                issueIntoRV(parsedInst, &IF_IDI[i], &BU_RV);
+                issueIntoRV(parsedInst, &IF_IDI[i], &BU_RV, MAX_RV_SIZE);
             }
 
             // LSU
             else if (parsedInst.OpCode >= LD && parsedInst.OpCode <= STOA) {
-                issueIntoRV(parsedInst, &IF_IDI[i], &LSU_RV);
+                issueIntoRV(parsedInst, &IF_IDI[i], &LSU_RV,MAX_RV_SIZE);
             }  
             else {
                 throw std::invalid_argument("Could no issue an unknown instruction: " + ID_I_Inst.OpCode);
@@ -987,6 +1001,8 @@ void runThroughEUAndAddToROB(std::array<T*, SIZE> EUs){
                 // Again, it should be illegal for an instruction to be CURRENT here
 
                 e->Out.state = NEXT;
+
+                cout << "Loading result of "; e->Out.printHuman(); cout << " into the ROB" << endl;
                 ReorderBuffer->LoadResultIntoROB(e->Out);
                 
                 e->Out.state = EMPTY;
@@ -1015,18 +1031,19 @@ void writeBack(){
     WB_gui = vector<DecodedInstruction>();
 
     // Cycle though the ROB and if the instructions at the front are complete then we commit/retire them
-    while (!ReorderBuffer->empty() && ReorderBuffer->ReorderBuffer.front().first.state == NEXT){
+    while (!ReorderBuffer->ReorderBuffer.empty() && ReorderBuffer->ReorderBuffer.front().first.state == NEXT){
         std::pair<DecodedInstruction, Optional<int>> entry = ReorderBuffer->ReorderBuffer.front();
 
-        if (entry.first.state == NEXT){
+        // Debugging/GUI
+        WB_gui.push_back(entry.first);
 
-            if (entry.second.HasValue() && entry.first.IsWriteBack){
-                PhysRegisterFile.at(entry.first.DEST).first = entry.first.OUT;
-                PhysRegisterFile.at(entry.first.DEST).second = true;
-            }
-
-            ReorderBuffer->ReorderBuffer.pop_front();
+        if (entry.second.HasValue() && entry.first.IsWriteBack){
+            cout << "WRITEBACK of: "; entry.first.printHuman(); cout << "decoded as: "; entry.first.print(); cout << endl;
+            PhysRegisterFile.at(entry.first.DEST).first = entry.first.OUT;
+            PhysRegisterFile.at(entry.first.DEST).second = true;
         }
+
+        ReorderBuffer->ReorderBuffer.pop_front();
     }
 
     /*

@@ -90,7 +90,8 @@ class ROB {
                 std::pair<DecodedInstruction, Optional<int>> entry = ReorderBuffer.at(i);
 
                 if (entry.first.state == CURRENT && entry.first.rd == inst.rd && entry.first.asString == inst.asString && entry.first.IsWriteBack){
-                    ReorderBuffer.at(i).first.state = NEXT;
+                    //ReorderBuffer.at(i).first.state = NEXT;
+                    ReorderBuffer.at(i).first = inst;
                     ReorderBuffer.at(i).second.Value(inst.OUT);
                     
                     return true;
@@ -114,7 +115,7 @@ class ROB {
          // Returns false if an an entry was found in the ROB and it has not completed excution
         bool CheckROBForForwardedValues(int* reg, int* val){
             for (int i = 0; i < ReorderBuffer.size(); i++){
-                if (ReorderBuffer.at(i).first.rd == *reg && ReorderBuffer.at(i).first.IsWriteBack){
+                if (ReorderBuffer.at(i).first.DEST == *reg && ReorderBuffer.at(i).first.IsWriteBack){
                     if (ReorderBuffer.at(i).first.state == NEXT && ReorderBuffer.at(i).second.HasValue()){
                         
                         // Update the value and then return true (it has been found and successfully updated and therefore it is valid)
@@ -126,18 +127,13 @@ class ROB {
                     }
                 }
             }
+            std::cout << "RETURNED TRUE!!!" << std::endl;
             return true;
         }
 
         // returns true if the ROB is full
         bool full(){
             if (ReorderBuffer.size() >= MAX_NUMBER_OR_ROB_ENTRIES) return true;
-            return false;
-        }
-
-        // returns true if empty()
-        bool empty(){
-            if (ReorderBuffer.size() <= 0) return true;
             return false;
         }
 
@@ -284,6 +280,8 @@ class BU : public ExecutionUnit{
     }
 
     void cycle(){
+
+        std::cout << "BU cycle called" << std::endl;
         // Move all info over to the output register and set it being empty so that it can be loaded with info
         this->Out = this->In;
         
