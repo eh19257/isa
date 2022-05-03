@@ -134,6 +134,8 @@ bool CheckIfWriteOnly(DecodedInstruction inst);
 int GetUnusedRegisterInPRF();
 bool IsRegisterValidForExecution(int* reg, int* val, int uniqueIdentifierForCurrentInst);
 DecodedInstruction RegisterRenameValidityCheck(DecodedInstruction inst);
+DecodedInstruction CheckBothRegistersAreValidForFurtherExecution(DecodedInstruction inst);
+DecodedInstruction CheckDestinationRegisterIsValid(DecodedInstruction inst);
 
 
 /* Non-ISA function headers */
@@ -331,6 +333,23 @@ DecodedInstruction CheckBothRegistersAreValidForFurtherExecution(DecodedInstruct
     return inst;
 }
 
+DecodedInstruction CheckDestinationRegisterIsValid(DecodedInstruction inst){
+    // If this instruction doesn't writeback then we also need to check the validity of it's RD
+    if (!inst.IsWriteBack){
+        if (inst.state == NEXT){
+            bool IsRdValid = IsRegisterValidForExecution(&inst.rd, &inst.DEST, inst.uniqueInstructionIdentifer);
+
+            // If the instruction already == NEXT and the destination is valid then we can set To NEXT, else BLOCK
+            if (IsRdValid && inst.state == NEXT) {
+                inst.state = NEXT;
+            } else {
+                inst.state = BLOCK;
+            }
+        }
+    }
+    return inst;
+}
+
 // Checks both source registers to see if they are valid for further execution
 DecodedInstruction RegisterRenameValidityCheck(DecodedInstruction inst){
     bool IsRs0Valid = true;
@@ -371,15 +390,27 @@ DecodedInstruction RegisterRenameValidityCheck(DecodedInstruction inst){
 void ForwardResultsToRVs(){
     for (int i = 0; i < ALU_RV.size(); i++) {
         ALU_RV.at(i).first = CheckBothRegistersAreValidForFurtherExecution(ALU_RV.at(i).first);
-        ALU_RV.at(i).second++;      // Increases the "age" of the instruction being in the RV
+        ALU_RV.at(i).first = CheckDestinationRegisterIsValid(ALU_RV.at(i).first);
+
+        ALU_RV.at(i).first = ReorderBuffer->BlockInstructionIfNotIsWriteBack(ALU_RV.at(i).first);
+
+        ALU_RV.at(i).second++;      // Increases the "age" of the instruction being in the RV        
     }
 
     for (int i = 0; i < BU_RV.size(); i++)   {
         BU_RV.at(i).first = CheckBothRegistersAreValidForFurtherExecution(BU_RV.at(i).first);
+        BU_RV.at(i).first = CheckDestinationRegisterIsValid(BU_RV.at(i).first);
+
+        BU_RV.at(i).first = ReorderBuffer->BlockInstructionIfNotIsWriteBack(BU_RV.at(i).first);
+
         BU_RV.at(i).second++;       // Increases the "age" of the instruction being in the RV
     }
     for (int i = 0; i < LSU_RV.size(); i++) {
         LSU_RV.at(i).first = CheckBothRegistersAreValidForFurtherExecution(LSU_RV.at(i).first); 
+        LSU_RV.at(i).first = CheckDestinationRegisterIsValid(LSU_RV.at(i).first);
+
+        LSU_RV.at(i).first = ReorderBuffer->BlockInstructionIfNotIsWriteBack(LSU_RV.at(i).first);
+
         LSU_RV.at(i).second++;      // Increases the "age" of the instruction being in the RV
     }
 }
@@ -419,14 +450,14 @@ void issueIntoRV(DecodedInstruction inst, NonDecodedInstruction* addyOfInReg, st
 
         // Needed so that the PRF doesnt get filled with falsely invalid physical registers
         UndoDestinationRegisterValidity(&inst);
+        ReorderBuffer->RemoveLastAddedToROB(inst);
         
         // NOTE: Blocking parsedInst wont really do much here but it is done to ensure behaviour follows in any case
 
     } else {
         // HERE THERE IS SPACE IN THE ALU_RV AND SO WE CAN ISSUE AN INSTRUCTION TO IT
         // Here we push out new parsed/decoded inst into the RV and we can set the previously undecoded instruction to EMPTY
-        inst.state = NEXT;
-
+        //cout << "ParsedInst just before being pushed into the RV ::" << inst.state << endl;
         RV->push_back(std::pair<DecodedInstruction, int>(inst, -1));
 
         addyOfInReg->state = EMPTY;
@@ -542,9 +573,9 @@ bool AllEUsAndRVsEmpty(){
 }
 
 // Flush reservation station if the instruction is on the incorrent sideOfTheBranch
-void flushRV(std::deque<std::pair<DecodedInstruction, int>>* RV, int sideOfBranchToRemove){
+void flushRV(std::deque<std::pair<DecodedInstruction, int>>* RV, int thisSideOfBranch){
     for (int i = 0; i < RV->size(); i++){
-        if (RV->at(i).first.sideOfBranch == sideOfBranchToRemove){
+        if (RV->at(i).first.sideOfBranch != thisSideOfBranch){
             // If instruction is writing back to a specific register then we need to remove it from the raw table and also remove the validity flag on the PRF
             //HazardDetectionUnit->RemoveFromRAWTable(RV->at(i).first);
             RemoveFromPRF(RV->at(i).first);
@@ -564,37 +595,37 @@ void flushPipeline(int thisSideOfBranch){
 
     IDI_inst = array<string, SUPERSCALAR_WIDTH>();
 
-    int sideOfBranchToRemove = (thisSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES;
+    //int sideOfBranchToRemove = (thisSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES;
     // Flush the ALUs (if need)
     for (int i = 0; i < NUMBER_OF_ALU; i++){
-        if (ALUs.at(i)->In.sideOfBranch == sideOfBranchToRemove){
+        if (ALUs.at(i)->In.sideOfBranch != thisSideOfBranch){
             ALUs.at(i)->In.state = EMPTY;
             ALUs.at(i)->currentInst = DecodedInstruction();
         }
     }
     // Flush the BUs (if needed)
     for (int i = 0; i < NUMBER_OF_BU; i++){
-        if (BUs.at(i)->In.sideOfBranch == sideOfBranchToRemove){
+        if (BUs.at(i)->In.sideOfBranch != thisSideOfBranch){
             BUs.at(i)->In.state = EMPTY;
             BUs.at(i)->currentInst = DecodedInstruction();
         }
     }
     // Flush the LSUs (if needed)
     for (int i = 0; i < NUMBER_OF_LSU; i++){
-        if (LSUs.at(i)->In.sideOfBranch == sideOfBranchToRemove){
+        if (LSUs.at(i)->In.sideOfBranch != thisSideOfBranch){
             LSUs.at(i)->In.state = EMPTY;
             LSUs.at(i)->currentInst = DecodedInstruction();
         }
     }
 
     // Clean RVs as well and removes any of the instructions from the RAW table and PRF
-    flushRV(&ALU_RV, sideOfBranchToRemove);
-    flushRV(&BU_RV, sideOfBranchToRemove);
-    flushRV(&LSU_RV, sideOfBranchToRemove);
+    flushRV(&ALU_RV, thisSideOfBranch);
+    flushRV(&BU_RV, thisSideOfBranch);
+    flushRV(&LSU_RV, thisSideOfBranch);
 
 
     // Clean the ROB
-    while (ReorderBuffer->ReorderBuffer.back().first.sideOfBranch == sideOfBranchToRemove){
+    while (ReorderBuffer->ReorderBuffer.back().first.sideOfBranch != thisSideOfBranch){
         // REMOVE entry from ROB
         ReorderBuffer->ReorderBuffer.pop_back();
     }
@@ -623,15 +654,23 @@ void cycle(){
 
     //HazardDetectionUnit->printRAW();
 
-    cout << "\nCurrent instruction(s) in the IF: " << IF_inst[0] << std::endl;
-    cout << "Current instruction(s) in the IDI: "; IDI_gui[0].printHuman(); std::cout << std::endl;
+    cout << "\nCurrent instruction(s) in the IF: ";
+    for (string i : IF_inst){
+        cout << i << "   ||   ";
+    } cout << endl;
+    cout << "Current instruction(s) in the IDI: ";
+    for (DecodedInstruction d : IDI_gui){
+        d.printHuman();
+        cout << "   ||   ";
+    } cout << endl;
+
     //cout << "Current instruction in the I:  " << I_inst << endl;
     cout << "Current instruction(s) in ALU0: "; ALUs.at(0)->currentInst.printHuman(); std::cout << "\tALU1: "; ALUs.at(1)->currentInst.printHuman(); std::cout << "\tBU: "; BUs.at(0)->currentInst.printHuman(); std::cout << "\tLSU: "; LSUs.at(0)->currentInst.printHuman(); std::cout << std::endl;
     
     cout << "Current instuction(s) in C: ";
     for (DecodedInstruction c : C_gui){
         c.printHuman();
-        cout << " || ";
+        cout << "   ||    ";
     } cout << endl;
 
     cout << "Current instruction(s) in the WB: ";  
@@ -708,6 +747,7 @@ void fetch(){
         if (IF_IDI[i].state == BLOCK || IF_IDI[i].state == CURRENT){
                 // We cannot collect any instructions from memory and pass it into IF_ID_Inst
                 cout << "Fetch() BLOCKED" << endl;
+                IF_inst[i] = "";
                 continue;
             }
         // else if IF_ID_Inst.state = NEXT or EMPTY - it shouldnt be equal to NEXT here but we check anyway
@@ -841,11 +881,11 @@ void decodeIssue(){
         else if (splitCIR.at(0).compare("LSHFT")== 0) parsedInst.OpCode = LSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
         else if (splitCIR.at(0).compare("RSHFT")== 0) parsedInst.OpCode = RSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
 
-        else if (splitCIR.at(0).compare("JMP")  == 0) { parsedInst.OpCode = JMP; parsedInst.IsWriteBack = false; currentSideOfBranch = (currentSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES; }
-        else if (splitCIR.at(0).compare("JMPI") == 0) { parsedInst.OpCode = JMPI; parsedInst.IsWriteBack = false; currentSideOfBranch = (currentSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES; }
-        else if (splitCIR.at(0).compare("BNE")  == 0) { parsedInst.OpCode = BNE; parsedInst.IsWriteBack = false; currentSideOfBranch = (currentSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES; }
-        else if (splitCIR.at(0).compare("BPO")  == 0) { parsedInst.OpCode = BPO; parsedInst.IsWriteBack = false; currentSideOfBranch = (currentSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES; }
-        else if (splitCIR.at(0).compare("BZ")   == 0) { parsedInst.OpCode = BZ; parsedInst.IsWriteBack = false; currentSideOfBranch = (currentSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES; }
+        else if (splitCIR.at(0).compare("JMP")  == 0) { parsedInst.OpCode = JMP; parsedInst.IsWriteBack = false; parsedInst.IsBranchInst = true; currentSideOfBranch = (currentSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES; }
+        else if (splitCIR.at(0).compare("JMPI") == 0) { parsedInst.OpCode = JMPI; parsedInst.IsWriteBack = false; parsedInst.IsBranchInst = true; currentSideOfBranch = (currentSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES; }
+        else if (splitCIR.at(0).compare("BNE")  == 0) { parsedInst.OpCode = BNE; parsedInst.IsWriteBack = false; parsedInst.IsBranchInst = true; currentSideOfBranch = (currentSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES; }
+        else if (splitCIR.at(0).compare("BPO")  == 0) { parsedInst.OpCode = BPO; parsedInst.IsWriteBack = false; parsedInst.IsBranchInst = true; currentSideOfBranch = (currentSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES; }
+        else if (splitCIR.at(0).compare("BZ")   == 0) { parsedInst.OpCode = BZ; parsedInst.IsWriteBack = false; parsedInst.IsBranchInst = true; currentSideOfBranch = (currentSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES; }
 
         else if (splitCIR.at(0).compare("HALT") == 0) { parsedInst.OpCode = HALT; parsedInst.IsWriteBack = false; }
         else if (splitCIR.at(0).compare("NOP")  == 0) { parsedInst.OpCode = NOP; parsedInst.IsWriteBack = false; }
@@ -862,22 +902,20 @@ void decodeIssue(){
 
         // state = NEXT here as it is easier to just overwrite it later on with BLOCK if needed
         parsedInst.state = NEXT;
-        cout << "Parsed before sregs check is ::" << parsedInst.state << endl;
         // Rename and get the values for the new instruction
         parsedInst = RegisterRenameValidityCheck(parsedInst);
-        cout << "Parsed after sregs check is ::" << parsedInst.state << endl;
 
         // Here we apply register renaming FOR THE DESTINATIONS REGISTER
         if (parsedInst.rd != -1){
             if (parsedInst.IsWriteBack){
-                if (parsedInst.rd != parsedInst.rs0 && parsedInst.rd != parsedInst.rs1){
+                //if (parsedInst.rd != parsedInst.rs0 && parsedInst.rd != parsedInst.rs1){
                     int Prd = GetUnusedRegisterInPRF();
 
                     cout << "Prd: " << Prd << endl;
 
                     // If there are no usable registers in the PRF then we cannot continue and so the IF/IDI register must block
                     if (Prd == -1){
-                        cout << "This is happening" << endl;
+                        cout << "THE ENTIRE PRF IS BEING USED UP" << endl;
                         IF_IDI[i].state = BLOCK;
 
                         IDI_gui[i] = DecodedInstruction();
@@ -893,12 +931,12 @@ void decodeIssue(){
                         // Replace the ARF register in the instruction with the new PRF one
                         parsedInst.rd = Prd;               
                     }
-                } else {
+                /*} else {
                     // In the case where it is not ONLY a write to the destination register - we use the map from the ARF to the PRF as the PRF reg
                     parsedInst.rd = ARF_To_PRF[parsedInst.rd];
 
                     PhysRegisterFile.at(parsedInst.rd).second = false;
-                }
+                }*/
 
                 // Both use the DEST as just the straight rd
                 parsedInst.DEST = parsedInst.rd;
@@ -916,8 +954,7 @@ void decodeIssue(){
             }
         }  
 
-        cout << "parsedInst state after d renaming ::" << parsedInst.state << endl;
-
+        //cout << "after initial register renaming, parsedInst is ::" << parsedInst.state << endl;
 
         // SUPER IMPORTANT - THIS IS THE PREVIOUS VALUE OF THE PC TO USE THE CORRECT OLD VALUE OF IT AND NOT THE NEW VALUE
         parsedInst.OUT = IF_IDI[i].PC;     // It is only set to the PC for the single instruction JMPI (indexed JMP)
@@ -929,14 +966,12 @@ void decodeIssue(){
         // instruction set to NEXT here as the RegisterRenameValidityCheck(.) line updates it to BLOCK if required
         //parsedInst.state = NEXT;
 
-
-        std::cout << "Instruction " << ID_I_Inst.asString << " in IDI decoded: "; ID_I_Inst.print();
-
-
         // Load instruction into ROB if it isn't full
         bool IsParsedInstLoadedIntoROB = ReorderBuffer->LoadInstructionIntoTheROB(parsedInst);
-        
-        cout << "parsedInst state after loadingIntoROB ::" << parsedInst.state << endl;
+
+        parsedInst = ReorderBuffer->BlockInstructionIfNotIsWriteBack(parsedInst);
+
+        //cout << "After ROB loading, parsedInst is ::" << parsedInst.state << endl;
 
         if (IsParsedInstLoadedIntoROB) {
             ////////////////////////////
@@ -1049,7 +1084,7 @@ void runThroughEUAndAddToROB(std::array<T*, SIZE> EUs){
 
                 e->Out.state = NEXT;
 
-                cout << "Loading result of "; e->Out.printHuman(); cout << " into the ROB" << endl;
+                cout << "COMMITING result of "; e->Out.printHuman(); cout << " into the ROB" << endl;
                 ReorderBuffer->LoadCompletedInstructionIntoROB(e->Out);
                 
                 // Debugging/gui
@@ -1092,7 +1127,9 @@ void writeBack(){
         if (entry.first.OpCode == HALT) systemHaltFlag = true;
         
         if (entry.second.HasValue() && entry.first.IsWriteBack){
+
             cout << "WRITEBACK of: "; entry.first.printHuman(); cout << "decoded as: "; entry.first.print(); cout << endl;
+            
             PhysRegisterFile.at(entry.first.DEST).first = entry.first.OUT;
             PhysRegisterFile.at(entry.first.DEST).second = true;
         }

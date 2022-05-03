@@ -1,15 +1,43 @@
+// Initialise Vector 1 in memory
+
+LDI r0 10
+LDI r1 21
+LDI r2 22
+LDI r3 23
+LDI r4 24
+STOI 0 r0
+STOI 1 r1
+STOI 2 r2
+STOI 3 r3
+STOI 4 r4
+
+// Initialise Vector 2 in memory
+
+LDI r0 10
+LDI r1 11
+LDI r2 12
+LDI r3 13
+LDI r4 14
+STOI 6 r0
+STOI 7 r1
+STOI 8 r2
+STOI 9 r3
+STOI 10 r4
+
+
 // Index
 LDI r0 0
 
 // Vector 2 offset
-LDI r1 5
+LDI r1 6
 
 // Size of vectors
 LDI r3 5
 
 // Branch to jump to 
-LDI r4 13
+LDI r4 33
 
+// Jumps back to here
 CMP r5 r0 r3
 BZ r4 r5        
 
@@ -25,6 +53,6 @@ STO r0 r6
 ADDI r0 r0 1
 
 // Jumps back
-LDI r10 4
+LDI r10 24
 JMP r10
 HALT

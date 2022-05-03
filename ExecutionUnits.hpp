@@ -145,6 +145,29 @@ class ROB {
             return true;
         }
 
+
+        DecodedInstruction BlockInstructionIfNotIsWriteBack(DecodedInstruction inst){
+            // If this is a write back instruction then we can ignore this special case and use the ROB as it was intended
+            if (!inst.IsWriteBack) {
+                // If this instrucion isn't a writeback, then we must check that no other !isWriteBack instruction is going to 
+                // -1 so we dont include the current instruction
+                for (int i = 0; i < ReorderBuffer.size() - 1 && ReorderBuffer.at(i).first.uniqueInstructionIdentifer != inst.uniqueInstructionIdentifer; i++){
+                    if (ReorderBuffer.at(i).first.IsBranchInst){
+                        inst.state = BLOCK;
+                        break;
+                    }
+                }
+            }
+            return inst;
+        }
+
+        void RemoveLastAddedToROB(DecodedInstruction inst){
+            if (ReorderBuffer.back().first.uniqueInstructionIdentifer != inst.uniqueInstructionIdentifer){
+                std::cout << "Trying to remove the last instruction but it isn't the one we want to - THIS IS AN ILLEGAL STATE" << std::endl;
+            }
+            ReorderBuffer.pop_back();
+        }
+
         // returns true if the ROB is full
         bool full(){
             if (ReorderBuffer.size() >= MAX_NUMBER_OR_ROB_ENTRIES) return true;
