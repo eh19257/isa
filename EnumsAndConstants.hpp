@@ -110,6 +110,8 @@ class Optional{
 struct DecodedInstruction {
     std::string asString = "";
 
+    int uniqueInstructionIdentifer; // Uniquely identifies an instruction in the pipeline so that it can be compared to other instructions later on - NOTE: an integer overflow on this is OK
+
     InstState state = EMPTY;    // State of the instruction
     bool IsWriteBack = true;   // Default IS writeback
     Instruction OpCode;         // OP code of the instruction

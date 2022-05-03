@@ -132,7 +132,7 @@ void issueIntoRV(DecodedInstruction inst, NonDecodedInstruction* addyOfInReg, st
 
 bool CheckIfWriteOnly(DecodedInstruction inst);
 int GetUnusedRegisterInPRF();
-bool IsRegisterValidForExecution(int* reg, int* val);
+bool IsRegisterValidForExecution(int* reg, int* val, int uniqueIdentifierForCurrentInst);
 DecodedInstruction RegisterRenameValidityCheck(DecodedInstruction inst);
 
 
@@ -141,6 +141,7 @@ void loadProgramIntoMemory();
 std::vector<std::string> split(std::string str, char deliminator);
 Register strToRegister(std::string str);
 bool handleProgramFlags(int count, char** arguments);
+void LoadDataIntoMemory(std::string path);
 
 /* Debugging function headers*/
 void outputAllMemory(int cutOff);
@@ -158,6 +159,7 @@ string WB_inst = "";
 array<DecodedInstruction, SUPERSCALAR_WIDTH> IF_gui;
 array<DecodedInstruction, SUPERSCALAR_WIDTH> IDI_gui;
 DecodedInstruction EX_gui;
+vector<DecodedInstruction> C_gui;
 vector<DecodedInstruction> WB_gui;
 
 /* Stats variables */
@@ -173,6 +175,8 @@ int currentSideOfBranch = 0;            // A global variable that keeps track of
                                         // We can keep track of which side of the branch we are in by using this currentSideOfBranch variable. On intialisation, we give each of
                                         // the instructions a number associated with the side of the branch. If the instruction is a branch then we increment this global value.
                                         // When we flush the pipline, we remove the instructions which have a different sideOfBranch as the BRANCH instruction
+int currentUniqueInstructionIdentifier = 0;     // Tracks which is the current unique instruction identifier
+
 #pragma region debugging
 
 void outputAllMemory(int cutOff){
@@ -203,7 +207,7 @@ void outputAllMemory(int cutOff){
 
 void printArchRegisterFile(int maxReg){
     std::cout << std::endl;
-    std::cout << "PC: " << PC << std::endl;
+    std::cout << "PC: " << PC - 1 << std::endl;
     std::cout << "CIR: " << CIR << std::endl;
     for (int i = 0; /*(i < 16) &&*/ (i < maxReg); i++){
         std::cout << "PRF" << i << ": " << PhysRegisterFile.at(i).first << "\t\t" << PhysRegisterFile.at(i).second << std::endl;
@@ -300,7 +304,7 @@ void UndoDestinationRegisterValidity(DecodedInstruction* inst){
 }
 
 // Returns true if this reg is valid for execution/use
-bool IsRegisterValidForExecution(int* reg, int* val){
+bool IsRegisterValidForExecution(int* reg, int* val, int uniqueIdentifierForCurrentInst){
     if (*reg == -1) return true;
 
     // If the valid bit is true
@@ -309,14 +313,14 @@ bool IsRegisterValidForExecution(int* reg, int* val){
     } else {
         // If the valid bit is not true then we can check the ROB for any valid values - this is the newer version of the RAW table
         // If an entry is found such that the instruction has been completed then it will return true (as it is valid) and then also update the value for the instruction
-        return ReorderBuffer->CheckROBForForwardedValues(reg, val);
+        return ReorderBuffer->CheckROBForForwardedValues(reg, val, uniqueIdentifierForCurrentInst);
     }
 }
 
 // Checks if an instruction's validity based on the validity of the 2 source registers (returned inst can BLOCK or NEXT)
 DecodedInstruction CheckBothRegistersAreValidForFurtherExecution(DecodedInstruction inst){
-    bool IsRs0Valid = IsRegisterValidForExecution(&inst.rs0, &inst.IN0);
-    bool IsRs1Valid = IsRegisterValidForExecution(&inst.rs1, &inst.IN1);
+    bool IsRs0Valid = IsRegisterValidForExecution(&inst.rs0, &inst.IN0, inst.uniqueInstructionIdentifer);
+    bool IsRs1Valid = IsRegisterValidForExecution(&inst.rs1, &inst.IN1, inst.uniqueInstructionIdentifer);
 
     if (IsRs0Valid && IsRs1Valid){
         inst.state = NEXT;
@@ -338,7 +342,7 @@ DecodedInstruction RegisterRenameValidityCheck(DecodedInstruction inst){
         inst.IN0 = PhysRegisterFile.at(inst.rs0).first;     // preload in the value in for this register before we check it's validity
 
         // If this register is valid to be used then it will return true and update the value if necerssary
-        IsRs0Valid = IsRegisterValidForExecution(&inst.rs0, &inst.IN0);
+        IsRs0Valid = IsRegisterValidForExecution(&inst.rs0, &inst.IN0, inst.uniqueInstructionIdentifer);
     }
 
     // if RS0 is a valid register then we can rename rs0
@@ -347,7 +351,7 @@ DecodedInstruction RegisterRenameValidityCheck(DecodedInstruction inst){
         inst.IN1 = PhysRegisterFile.at(inst.rs1).first;     // preload in the value in for this register before we check it's validity
 
         // If this register is valid to be used then it will return true and update the value if necerssary
-        IsRs1Valid = IsRegisterValidForExecution(&inst.rs1, &inst.IN1);
+        IsRs1Valid = IsRegisterValidForExecution(&inst.rs1, &inst.IN1, inst.uniqueInstructionIdentifer);
     }
 
     //if one of them is not valid then we MUST BLOCK this instruction
@@ -423,13 +427,11 @@ void issueIntoRV(DecodedInstruction inst, NonDecodedInstruction* addyOfInReg, st
         // Here we push out new parsed/decoded inst into the RV and we can set the previously undecoded instruction to EMPTY
         inst.state = NEXT;
 
-        cout << "THIS IS TASTY" << endl;
-
         RV->push_back(std::pair<DecodedInstruction, int>(inst, -1));
 
         addyOfInReg->state = EMPTY;
 
-        cout << "Loaded instruction " << inst.asString << " into ALU_RV. Decoded instruction: "; inst.print();
+        cout << "Loaded instruction " << inst.asString << " into RV. Decoded instruction: "; inst.print();
     }
 
 }
@@ -621,11 +623,22 @@ void cycle(){
 
     //HazardDetectionUnit->printRAW();
 
-    cout << "\nCurrent instruction in the IF: " << IF_inst[0] << std::endl;
-    cout << "Current instruction in the IDI: "; IDI_gui[0].printHuman(); std::cout << std::endl;
+    cout << "\nCurrent instruction(s) in the IF: " << IF_inst[0] << std::endl;
+    cout << "Current instruction(s) in the IDI: "; IDI_gui[0].printHuman(); std::cout << std::endl;
     //cout << "Current instruction in the I:  " << I_inst << endl;
-    cout << "Current instruction in ALU0: "; ALUs.at(0)->currentInst.printHuman(); std::cout << "\tALU1: "; ALUs.at(1)->currentInst.printHuman(); std::cout << "\tBU: "; BUs.at(0)->currentInst.printHuman(); std::cout << "\tLSU: "; LSUs.at(0)->currentInst.printHuman(); std::cout << std::endl;
-    cout << "Current instruction in the WB: ";  if (!WB_gui.empty()) WB_gui.at(0).printHuman(); std::cout << std::endl; 
+    cout << "Current instruction(s) in ALU0: "; ALUs.at(0)->currentInst.printHuman(); std::cout << "\tALU1: "; ALUs.at(1)->currentInst.printHuman(); std::cout << "\tBU: "; BUs.at(0)->currentInst.printHuman(); std::cout << "\tLSU: "; LSUs.at(0)->currentInst.printHuman(); std::cout << std::endl;
+    
+    cout << "Current instuction(s) in C: ";
+    for (DecodedInstruction c : C_gui){
+        c.printHuman();
+        cout << " || ";
+    } cout << endl;
+
+    cout << "Current instruction(s) in the WB: ";  
+        for (DecodedInstruction d : WB_gui){
+            d.printHuman();
+            cout << " || ";
+        } cout << endl;
             
     cout << "\n\tALU_RV\t\tBU_RV \t\tLSU_RV" << endl;
     for (int i = 0; i < MAX_RV_SIZE; i++){
@@ -641,9 +654,23 @@ void cycle(){
         
         cout << endl;
     }
+    cout << "\n" << endl;
+    cout << "========== Re-order buffer ==========" << endl;
+    for (int i = 0; i < ReorderBuffer->ReorderBuffer.size(); i++){
+        cout << i << "\t" << ReorderBuffer->ReorderBuffer.at(i).first.rd << "\t";
+
+        if (ReorderBuffer->ReorderBuffer.at(i).second.HasValue()){
+            cout << ReorderBuffer->ReorderBuffer.at(i).second.Value();
+        } else {
+            cout << "X";
+        }
+        cout << "\t";
+        ReorderBuffer->ReorderBuffer.at(i).first.printHuman();
+        cout << "\t" << ReorderBuffer->ReorderBuffer.at(i).first.state << endl;
+    }
 
     cout << "\n\n" << endl;
-    if (PRINT_REGISTERS_FLAG) printArchRegisterFile(26);
+    if (PRINT_REGISTERS_FLAG) printArchRegisterFile(10);
     if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
 
     std::cout << "---------- Cycle " << numOfCycles << " completed. ----------\n"<< std::endl;
@@ -658,7 +685,7 @@ void run(){
     outputAllMemory(amount_of_instruction_memory_to_output);
 
     std::string foo;
-    while (!(systemHaltFlag && AllEUsAndRVsEmpty())) {
+    while (!systemHaltFlag){//!(systemHaltFlag && AllEUsAndRVsEmpty())) {
         cycle();        
         if (SINGLE_STEP_FLAG) std::cin >> foo;
     }
@@ -734,6 +761,9 @@ void decodeIssue(){
         // Make new inst instance for decoded inst
         DecodedInstruction parsedInst;
         parsedInst.state = CURRENT;
+    
+        parsedInst.uniqueInstructionIdentifer = currentUniqueInstructionIdentifier;     // Give the current instruction an identifier
+        currentUniqueInstructionIdentifier++;                                           // Update currentUniqueInstructionIdentifier for the next instruciton that enters IDI in the pipeline
         
         std::vector<std::string> splitCIR = split(IF_IDI[i].instruction, ' '); // split the instruction based on ' ' and decode instruction like that
         
@@ -832,9 +862,10 @@ void decodeIssue(){
 
         // state = NEXT here as it is easier to just overwrite it later on with BLOCK if needed
         parsedInst.state = NEXT;
-        
+        cout << "Parsed before sregs check is ::" << parsedInst.state << endl;
         // Rename and get the values for the new instruction
         parsedInst = RegisterRenameValidityCheck(parsedInst);
+        cout << "Parsed after sregs check is ::" << parsedInst.state << endl;
 
         // Here we apply register renaming FOR THE DESTINATIONS REGISTER
         if (parsedInst.rd != -1){
@@ -879,13 +910,13 @@ void decodeIssue(){
                 parsedInst.DEST = PhysRegisterFile.at(parsedInst.rd).first;
 
 
-                if (!IsRegisterValidForExecution(&parsedInst.rd, &parsedInst.DEST)){
+                if (!IsRegisterValidForExecution(&parsedInst.rd, &parsedInst.DEST, parsedInst.uniqueInstructionIdentifer)){
                     parsedInst.state = BLOCK;
                 } else; // We either BLOCK or NEXT depending on the validity of the other registers
             }
         }  
 
-
+        cout << "parsedInst state after d renaming ::" << parsedInst.state << endl;
 
 
         // SUPER IMPORTANT - THIS IS THE PREVIOUS VALUE OF THE PC TO USE THE CORRECT OLD VALUE OF IT AND NOT THE NEW VALUE
@@ -905,13 +936,12 @@ void decodeIssue(){
         // Load instruction into ROB if it isn't full
         bool IsParsedInstLoadedIntoROB = ReorderBuffer->LoadInstructionIntoTheROB(parsedInst);
         
+        cout << "parsedInst state after loadingIntoROB ::" << parsedInst.state << endl;
 
         if (IsParsedInstLoadedIntoROB) {
             ////////////////////////////
             ///// ISSUING INTO RVS /////
             ///////////////////////////
-
-            cout << "IS this being run?" << endl;
 
             // ALU
             if ( (parsedInst.OpCode >= ADD && parsedInst.OpCode <= CMP) || parsedInst.OpCode == MV || (parsedInst.OpCode >= AND && parsedInst.OpCode <= RSHFT) ){
@@ -933,7 +963,6 @@ void decodeIssue(){
 
 
     }
-
     // Any forwarded results are given to the instructions that are in the RVs
     ForwardResultsToRVs();
     // Offloads an instruciton from one RV into their respective EU
@@ -1021,8 +1050,11 @@ void runThroughEUAndAddToROB(std::array<T*, SIZE> EUs){
                 e->Out.state = NEXT;
 
                 cout << "Loading result of "; e->Out.printHuman(); cout << " into the ROB" << endl;
-                ReorderBuffer->LoadResultIntoROB(e->Out);
+                ReorderBuffer->LoadCompletedInstructionIntoROB(e->Out);
                 
+                // Debugging/gui
+                C_gui.push_back(e->Out);
+
                 e->Out.state = EMPTY;
             } else {
                 // e->Out is EMPTY
@@ -1036,6 +1068,8 @@ void runThroughEUAndAddToROB(std::array<T*, SIZE> EUs){
 
 // Handles the update of the ROB and will commit any values to the PRF for any instructions that have been completed
 void commit(){
+    C_gui = vector<DecodedInstruction>();
+
     runThroughEUAndAddToROB(ALUs);
     runThroughEUAndAddToROB(BUs);
     runThroughEUAndAddToROB(LSUs);
@@ -1055,6 +1089,8 @@ void writeBack(){
         // Debugging/GUI
         WB_gui.push_back(entry.first);
 
+        if (entry.first.OpCode == HALT) systemHaltFlag = true;
+        
         if (entry.second.HasValue() && entry.first.IsWriteBack){
             cout << "WRITEBACK of: "; entry.first.printHuman(); cout << "decoded as: "; entry.first.print(); cout << endl;
             PhysRegisterFile.at(entry.first.DEST).first = entry.first.OUT;
@@ -1096,6 +1132,7 @@ void loadProgramIntoMemory(std::string pathToProgram){
         }
     }
     amount_of_instruction_memory_to_output = counter - 1;
+    program.close();
 }
 
 
@@ -1130,8 +1167,43 @@ bool handleProgramFlags(int c, char** arguments){
     if (count(args.begin(), args.end(), "-m") == 1 ) PRINT_MEMORY_FLAG = true;
     if (count(args.begin(), args.end(), "-s") == 1 ) PRINT_STATS_FLAG = true;
     if (count(args.begin(), args.end(), "--step") == 1) SINGLE_STEP_FLAG = true;
+    /*if (count(args.begin(), args.end(), "--load-memory") == 1){
+        for (int i = 0; i < sizeof(arguments); i++){
+            if (std::string(arguments[i]) == std::string("--load-memory")){
+                LoadDataIntoMemory(std::string(arguments[i+1]));
+            }
+        }
+    }*/
 
     return true;
+}
+
+
+// Take a file and loads the data into memory - this is done so that only program runs (no memory loading) and so the stats are only applied to the actual program
+void LoadDataIntoMemory(std::string path){
+    std::ifstream dataFile(path);
+    std::string line;
+    int counter = 0;
+
+    while (!dataFile.eof()){
+        if (counter >= 256){
+            throw std::invalid_argument("Too MUCH MEMORY AGHGHAHGHAHGAHGAHH!!!!");
+            break;
+        }
+        
+        
+        std::getline(dataFile, line);
+
+        cout << line << "tyui" << endl;
+
+        //if (!std::string(line).empty()){
+        //    cout << "asdfasdf" << line << "asdf\n"<< endl;
+            dataMemory.at(counter) = std::stoi(line);//.substr(0, line.length() - 1));
+            counter++;
+        //}
+        
+    }
+    dataFile.close();
 }
 
 #pragma endregion helperFunctions

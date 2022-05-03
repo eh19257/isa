@@ -85,15 +85,22 @@ class ROB {
 
 
         // returns true if the result was successfully loaded into the ROB, returns false if not (note: it should NEVER return false)
-        bool LoadResultIntoROB(DecodedInstruction inst){
+        bool LoadCompletedInstructionIntoROB(DecodedInstruction inst){
             for (int i = 0; i < ReorderBuffer.size(); i++){
                 std::pair<DecodedInstruction, Optional<int>> entry = ReorderBuffer.at(i);
 
-                if (entry.first.state == CURRENT && entry.first.rd == inst.rd && entry.first.asString == inst.asString && entry.first.IsWriteBack){
-                    //ReorderBuffer.at(i).first.state = NEXT;
-                    ReorderBuffer.at(i).first = inst;
-                    ReorderBuffer.at(i).second.Value(inst.OUT);
-                    
+                // If the instruction matches
+                if (entry.first.uniqueInstructionIdentifer == inst.uniqueInstructionIdentifer){
+                    // handle for when an instruction is writeback
+                    if (entry.first.IsWriteBack){
+
+                        inst.state = NEXT;
+                        ReorderBuffer.at(i).first = inst;
+                        ReorderBuffer.at(i).second.Value(inst.OUT);
+                    } else {
+                        // Handle for when the instruction does NOT write back
+                        ReorderBuffer.at(i).first.state = NEXT;                        
+                    }
                     return true;
                 }
             }
@@ -113,9 +120,14 @@ class ROB {
         }
     
          // Returns false if an an entry was found in the ROB and it has not completed excution
-        bool CheckROBForForwardedValues(int* reg, int* val){
+        bool CheckROBForForwardedValues(int* reg, int* val, int uniqueIdentifierForCurrentInst){
             for (int i = 0; i < ReorderBuffer.size(); i++){
-                if (ReorderBuffer.at(i).first.DEST == *reg && ReorderBuffer.at(i).first.IsWriteBack){
+                if (ReorderBuffer.at(i).first.uniqueInstructionIdentifer == uniqueIdentifierForCurrentInst){
+                    // This has to be done so we dont get an instruction waiting for itself
+                    continue;
+                }
+                
+                if (ReorderBuffer.at(i).first.rd == *reg && ReorderBuffer.at(i).first.IsWriteBack){
                     if (ReorderBuffer.at(i).first.state == NEXT && ReorderBuffer.at(i).second.HasValue()){
                         
                         // Update the value and then return true (it has been found and successfully updated and therefore it is valid)
@@ -123,6 +135,8 @@ class ROB {
                         return true;
 
                     } else {
+                        //std::cout << *reg << " and val: " << *val << " are clashing with the instruction "; ReorderBuffer.at(i).first.printHuman();
+                        //std::cout << std::endl;
                         return false;
                     }
                 }
