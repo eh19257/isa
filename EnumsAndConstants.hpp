@@ -115,6 +115,8 @@ struct DecodedInstruction {
     InstState state = EMPTY;    // State of the instruction
     bool IsWriteBack = true;   // Default IS writeback
     bool IsBranchInst = false;
+    bool IsMemoryOperation = false;
+
     Instruction OpCode;         // OP code of the instruction
 
     int sideOfBranch = 0;
@@ -125,7 +127,7 @@ struct DecodedInstruction {
     int rs0 = -1;   // Actual register used in instruction for source register 0 - Used to fight RAW hazards
     int rs1 = -1;   // Actual register used in instruction for source register 1 - Used to fight RAW hazards
 
-    int DEST;       // Destination for the instruction  (optional) 
+    int DEST = -1;       // Destination for the instruction  (optional) 
     int IN0;        // Input 1                          (optional)
     int IN1;        // Input 2                          (optional) 
     int IMM;        // Immediate                        (optional) 
@@ -181,4 +183,4 @@ const int NUMBER_OF_ALU = 2;
 const int NUMBER_OF_BU = 1;
 const int NUMBER_OF_LSU = 1;
 
-const int SUPERSCALAR_WIDTH = 2;
+const int SUPERSCALAR_WIDTH = 1;

@@ -139,6 +139,9 @@ DecodedInstruction CheckBothRegistersAreValidForFurtherExecution(DecodedInstruct
 DecodedInstruction CheckDestinationRegisterIsValid(DecodedInstruction inst);
 
 
+/* Commit helpers */
+void CommitMemoryOperation(DecodedInstruction inst);
+
 /* Non-ISA function headers */
 void loadProgramIntoMemory();
 std::vector<std::string> split(std::string str, char deliminator);
@@ -394,7 +397,7 @@ void ForwardResultsToRVs(){
         ALU_RV.at(i).first = CheckBothRegistersAreValidForFurtherExecution(ALU_RV.at(i).first);
         ALU_RV.at(i).first = CheckDestinationRegisterIsValid(ALU_RV.at(i).first);
 
-        ALU_RV.at(i).first = ReorderBuffer->BlockInstructionIfNotIsWriteBack(ALU_RV.at(i).first);
+        //ALU_RV.at(i).first = ReorderBuffer->BlockInstructionIfNotIsWriteBack(ALU_RV.at(i).first);
 
         ALU_RV.at(i).second++;      // Increases the "age" of the instruction being in the RV        
     }
@@ -403,7 +406,7 @@ void ForwardResultsToRVs(){
         BU_RV.at(i).first = CheckBothRegistersAreValidForFurtherExecution(BU_RV.at(i).first);
         BU_RV.at(i).first = CheckDestinationRegisterIsValid(BU_RV.at(i).first);
 
-        BU_RV.at(i).first = ReorderBuffer->BlockInstructionIfNotIsWriteBack(BU_RV.at(i).first);
+        //BU_RV.at(i).first = ReorderBuffer->BlockInstructionIfNotIsWriteBack(BU_RV.at(i).first);
 
         BU_RV.at(i).second++;       // Increases the "age" of the instruction being in the RV
     }
@@ -411,7 +414,7 @@ void ForwardResultsToRVs(){
         LSU_RV.at(i).first = CheckBothRegistersAreValidForFurtherExecution(LSU_RV.at(i).first); 
         LSU_RV.at(i).first = CheckDestinationRegisterIsValid(LSU_RV.at(i).first);
 
-        LSU_RV.at(i).first = ReorderBuffer->BlockInstructionIfNotIsWriteBack(LSU_RV.at(i).first);
+        //LSU_RV.at(i).first = ReorderBuffer->BlockInstructionIfNotIsWriteBack(LSU_RV.at(i).first);
 
         LSU_RV.at(i).second++;      // Increases the "age" of the instruction being in the RV
     }
@@ -644,6 +647,27 @@ void flushPipeline(int thisSideOfBranch){
 }
 
 #pragma endregion pipline flushing
+
+
+#pragma region Commit Helpers
+
+void CommitMemoryOperation(DecodedInstruction inst){
+
+
+    if (inst.OpCode >= LD && inst.OpCode <= LDA && inst.OpCode != LDI){
+        PhysRegisterFile.at(inst.DEST).first = dataMemory.at(inst.OUT);
+    }    
+    else if (inst.OpCode >= STO && inst.OpCode <= STOA) {
+        dataMemory.at(inst.DEST) = PhysRegisterFile.at(inst.OUT).first;
+    } else {
+        throw std::invalid_argument("Not a memory access instruction");
+    }
+
+    // Then set the register in the PRF back to valid
+    PhysRegisterFile.at(inst.OUT).second = true;
+}
+
+#pragma endregion Commit Helpers
 
 #pragma region F/D/E/M/W/
 
@@ -889,15 +913,15 @@ void decode(){
         else if (splitCIR.at(0).compare("DIVF") == 0) parsedInst.OpCode = DIVF;
         else if (splitCIR.at(0).compare("CMP")  == 0) parsedInst.OpCode = CMP;
 
-        else if (splitCIR.at(0).compare("LD")   == 0) parsedInst.OpCode = LD;
-        else if (splitCIR.at(0).compare("LDD")  == 0) { parsedInst.OpCode = LDD; parsedInst.IMM = stoi(splitCIR.at(2)); } 
+        else if (splitCIR.at(0).compare("LD")   == 0) { parsedInst.OpCode = LD; parsedInst.IsMemoryOperation = true; }
+        else if (splitCIR.at(0).compare("LDD")  == 0) { parsedInst.OpCode = LDD; parsedInst.IMM = stoi(splitCIR.at(2)); parsedInst.IsMemoryOperation = true; } 
         else if (splitCIR.at(0).compare("LDI")  == 0) { parsedInst.OpCode = LDI; parsedInst.IMM = stoi(splitCIR.at(2)); }
-        else if (splitCIR.at(0).compare("LID")  == 0) parsedInst.OpCode = LID;
-        else if (splitCIR.at(0).compare("LDA")  == 0) parsedInst.OpCode = LDA;
+        else if (splitCIR.at(0).compare("LID")  == 0) { parsedInst.OpCode = LID; parsedInst.IsMemoryOperation = true; }
+        else if (splitCIR.at(0).compare("LDA")  == 0) { parsedInst.OpCode = LDA; parsedInst.IsMemoryOperation = true; }
         
-        else if (splitCIR.at(0).compare("STO")  == 0) { parsedInst.OpCode = STO; parsedInst.IsWriteBack = false; }//ArchRegisterFile.at(strToRegister(splitCIR.at(1))); parsedInst.IsWriteBack = false; }
-        else if (splitCIR.at(0).compare("STOI") == 0) { parsedInst.OpCode = STOI; parsedInst.IMM = stoi(splitCIR.at(1)); parsedInst.IsWriteBack = false; }
-        else if (splitCIR.at(0).compare("STOA") == 0) { parsedInst.OpCode = STOA; parsedInst.IsWriteBack = false; }
+        else if (splitCIR.at(0).compare("STO")  == 0) { parsedInst.OpCode = STO; parsedInst.IsWriteBack = false; parsedInst.IsMemoryOperation = true; }//ArchRegisterFile.at(strToRegister(splitCIR.at(1))); parsedInst.IsWriteBack = false; }
+        else if (splitCIR.at(0).compare("STOI") == 0) { parsedInst.OpCode = STOI; parsedInst.IMM = stoi(splitCIR.at(1)); parsedInst.IsWriteBack = false; parsedInst.IsMemoryOperation = true; }
+        else if (splitCIR.at(0).compare("STOA") == 0) { parsedInst.OpCode = STOA; parsedInst.IsWriteBack = false; parsedInst.IsMemoryOperation = true; }
 
         else if (splitCIR.at(0).compare("AND")  == 0) parsedInst.OpCode = AND;
         else if (splitCIR.at(0).compare("OR")   == 0) parsedInst.OpCode = OR;
@@ -992,7 +1016,8 @@ void decode(){
 
         // Load instruction into ROB if it isn't full
         bool IsParsedInstLoadedIntoROB = ReorderBuffer->LoadInstructionIntoTheROB(parsedInst);
-
+        
+        
         parsedInst = ReorderBuffer->BlockInstructionIfNotIsWriteBack(parsedInst);
 
         //cout << "After ROB loading, parsedInst is ::" << parsedInst.state << endl;
@@ -1120,7 +1145,7 @@ void runThroughEUAndAddToROB(std::array<T*, SIZE> EUs){
         if (ReorderBuffer->full()){
             e->Out.state = BLOCK;
         } else {
-            if (e->Out.state == BLOCK || e->Out.state == NEXT || e->Out.state == CURRENT) {
+            if (e->Out.state == BLOCK || e->Out.state == NEXT) {
                 // Again, it should be illegal for an instruction to be CURRENT here
 
                 e->Out.state = NEXT;
@@ -1159,23 +1184,42 @@ void writeBack(){
     WB_gui = vector<DecodedInstruction>();
 
     // Cycle though the ROB and if the instructions at the front are complete then we commit/retire them
-    while (!ReorderBuffer->ReorderBuffer.empty() && ReorderBuffer->ReorderBuffer.front().first.state == NEXT){
-        std::pair<DecodedInstruction, Optional<int>> entry = ReorderBuffer->ReorderBuffer.front();
+    for (int i= 0; i < ReorderBuffer->ReorderBuffer.size(); i++){ //} (!ReorderBuffer->ReorderBuffer.empty()){
 
+        std::pair<DecodedInstruction, Optional<int>> entry = ReorderBuffer->ReorderBuffer.at(i);
+
+        if ((entry.first.state != NEXT && !entry.first.IsMemoryOperation) || (entry.first.state == BLOCK && !entry.first.IsMemoryOperation)) {
+            break;
+        }
+
+        cout << "loop" << endl;
         // Debugging/GUI
         WB_gui.push_back(entry.first);
 
-        if (entry.first.OpCode == HALT) systemHaltFlag = true;
-        
-        if (entry.second.HasValue() && entry.first.IsWriteBack){
-
-            cout << "WRITEBACK of: "; entry.first.printHuman(); cout << "decoded as: "; entry.first.print(); cout << endl;
-            
-            PhysRegisterFile.at(entry.first.DEST).first = entry.first.OUT;
-            PhysRegisterFile.at(entry.first.DEST).second = true;
+        if (entry.first.OpCode == HALT) {
+            systemHaltFlag = true;
+            break;
         }
+        
+        if (entry.first.IsMemoryOperation && entry.first.state == CURRENT) {
+            // Handle memory access operations
+            // On a memory operation we dont kill it straight away, we wait til next time so that any instructions inthe RVs can be updated
 
-        ReorderBuffer->ReorderBuffer.pop_front();
+            CommitMemoryOperation(entry.first);
+            // Tell the ROB that the instruction is complete
+            ReorderBuffer->ReorderBuffer.at(i).first.state = NEXT;
+        } else {
+
+            if (entry.second.HasValue() && entry.first.IsWriteBack){
+
+                cout << "WRITEBACK of: "; entry.first.printHuman(); cout << "decoded as: "; entry.first.print(); cout << endl;
+                
+                PhysRegisterFile.at(entry.first.DEST).first = entry.first.OUT;
+                PhysRegisterFile.at(entry.first.DEST).second = true;
+            }
+            ReorderBuffer->ReorderBuffer.pop_front();
+        }
+        
     }
 }
 

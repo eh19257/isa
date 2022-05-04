@@ -93,14 +93,17 @@ class ROB {
                 if (entry.first.uniqueInstructionIdentifer == inst.uniqueInstructionIdentifer){
                     // handle for when an instruction is writeback
                     if (entry.first.IsWriteBack){
-
-                        inst.state = NEXT;
                         ReorderBuffer.at(i).first = inst;
                         ReorderBuffer.at(i).second.Value(inst.OUT);
-                    } else {
-                        // Handle for when the instruction does NOT write back
-                        ReorderBuffer.at(i).first.state = NEXT;                        
                     }
+
+                    // If it's a memory operation then it hasnt technically completed yet, we need to actually do the memory stuff before we even think about using these values
+                    if (ReorderBuffer.at(i).first.IsMemoryOperation) {
+                        ReorderBuffer.at(i).first.state = CURRENT;
+                    } else {
+                        ReorderBuffer.at(i).first.state = NEXT;
+                    }
+
                     return true;
                 }
             }
@@ -112,8 +115,12 @@ class ROB {
             if (ReorderBuffer.size() >= MAX_NUMBER_OR_ROB_ENTRIES) {
                 return false;
             } else {
-                inst.state = CURRENT;
-
+                if (inst.IsMemoryOperation){
+                    inst.state = BLOCK;
+                } else {
+                    inst.state = CURRENT;
+                }
+                
                 ReorderBuffer.push_back(std::pair<DecodedInstruction, Optional<int>>(inst, Optional<int>()));
                 return true;
             }
@@ -446,6 +453,7 @@ class LSU : public ExecutionUnit{
 
         std::cout << "LSU cycle called" << std::endl;
 
+        /*
         switch(In.OpCode){
             case LD:
                 Out.OUT = memoryData->at(In.IN0);
@@ -474,9 +482,9 @@ class LSU : public ExecutionUnit{
                 //std::cout << "LDI IS RUNNING HERE!!! this->writeBackFlag: " << this->Out.IsWriteBack << std::endl;
                 break;
 
-            /*case LID:                   // BROKEN ################################
+            //// case LID:                   // BROKEN ################################
                 registerFile[ALUD] = dataMemory[dataMemory[In.IN0]];
-                break;*/
+                break;
             case LDA:
                 Out.OUT = memoryData->at(In.IN0 + In.IN1);
                 Out.DEST = In.DEST;
@@ -498,6 +506,71 @@ class LSU : public ExecutionUnit{
             
             case STOA:
                 memoryData->at(In.DEST + In.IN0) = In.IN1;
+
+                break;
+
+            default:
+                throw std::invalid_argument("LSU cannot execute instruction: " + In.OpCode);
+        }*/
+
+
+        switch(In.OpCode){
+            case LD:
+                Out.OUT = In.IN0;
+                
+                //this->writeBackFlag = true;
+                break;
+
+            case LDD:
+                Out.OUT = In.IMM;
+                //Out.DEST = In.DEST;
+
+                //this->writeBackFlag = true;
+                break;
+
+            case LDI:                   // #####################
+                ldiCount++;
+                if (ldiCount < 0) return;
+
+                ldiCount = 0;
+
+                Out.OUT = In.IMM;
+                Out.DEST = In.DEST;
+        
+                //this->writeBackFlag = true;
+                //std::cout << "LDI IS RUNNING HERE!!! this->writeBackFlag: " << this->Out.IsWriteBack << std::endl;
+                break;
+
+            //// case LID:                   // BROKEN ################################
+            //    registerFile[ALUD] = dataMemory[dataMemory[In.IN0]];
+            //    break;
+            case LDA:
+                Out.OUT = In.IN0 + In.IN1;
+                //Out.DEST = In.DEST;
+
+                //this->writeBackFlag = true;
+                break;
+
+            case STO:
+                Out.OUT = In.IN0;
+
+                //this->writeBackFlag = false;
+                break;
+
+            case STOI:                   // #####################
+                Out.DEST = In.IMM;
+                Out.OUT = In.IN0;
+                
+                //memoryData->at(In.IMM) = In.IN0;
+
+                //this->writeBackFlag = false;
+                break;
+            
+            case STOA:
+                Out.DEST = In.DEST + In.IN0;
+                Out.OUT = In.IN1;
+                
+                //memoryData->at(In.DEST + In.IN0) = In.IN1;
 
                 break;
 
