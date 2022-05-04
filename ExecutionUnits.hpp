@@ -168,6 +168,15 @@ class ROB {
             ReorderBuffer.pop_back();
         }
 
+        bool IsInstInROB(DecodedInstruction inst){
+            for (int i = 0; i < ReorderBuffer.size(); i++){
+                if (ReorderBuffer.at(i).first.uniqueInstructionIdentifer == inst.uniqueInstructionIdentifer){
+                    return true;
+                }
+            }
+            return false;
+        }
+
         // returns true if the ROB is full
         bool full(){
             if (ReorderBuffer.size() >= MAX_NUMBER_OR_ROB_ENTRIES) return true;

@@ -43,7 +43,8 @@ std::string CIR;            // Current Instruction Register
 int IMMEDIATE;              // Immediate register used for immediate addressing
 
 NonDecodedInstruction IF_ID_Inst;   // WARNING THIS IS A NON decoded instruction that is ONLY USED ONCE (here in IF)
-std::array<NonDecodedInstruction, SUPERSCALAR_WIDTH> IF_IDI;
+std::array<NonDecodedInstruction, SUPERSCALAR_WIDTH> IF_ID;
+std::array<DecodedInstruction, SUPERSCALAR_WIDTH> ID_I; 
 
 // IDI/ALU_RVS
 
@@ -159,7 +160,8 @@ string EX_inst = "";
 string WB_inst = "";
 
 array<DecodedInstruction, SUPERSCALAR_WIDTH> IF_gui;
-array<DecodedInstruction, SUPERSCALAR_WIDTH> IDI_gui;
+array<DecodedInstruction, SUPERSCALAR_WIDTH> ID_gui;
+array<DecodedInstruction, SUPERSCALAR_WIDTH> I_gui;
 DecodedInstruction EX_gui;
 vector<DecodedInstruction> C_gui;
 vector<DecodedInstruction> WB_gui;
@@ -439,18 +441,18 @@ DecodedInstruction GetOldestValidInstruction(DecodedInstruction inst, std::deque
     return inst;
 }
 
-void issueIntoRV(DecodedInstruction inst, NonDecodedInstruction* addyOfInReg, std::deque<std::pair<DecodedInstruction, int>>* RV, int maxSizeForThisRV){
+void issueIntoRV(DecodedInstruction* inst, std::deque<std::pair<DecodedInstruction, int>>* RV, int maxSizeForThisRV){
     // Check if there is any space in the RVs
     if ((int) RV->size() >= maxSizeForThisRV){
 
         cout << "RV->size() >= maxSizeOFThisRV" << endl;
         // the ALU's RV is full and so we have to set the ID_I_Inst to BLOCKING
-        addyOfInReg->state = BLOCK;
-        inst.state = BLOCK;
+        //addyOfInReg->state = BLOCK;
+        inst->state = BLOCK;
 
         // Needed so that the PRF doesnt get filled with falsely invalid physical registers
-        UndoDestinationRegisterValidity(&inst);
-        ReorderBuffer->RemoveLastAddedToROB(inst);
+        //UndoDestinationRegisterValidity(inst);
+        //ReorderBuffer->RemoveLastAddedToROB(*inst);
         
         // NOTE: Blocking parsedInst wont really do much here but it is done to ensure behaviour follows in any case
 
@@ -458,11 +460,12 @@ void issueIntoRV(DecodedInstruction inst, NonDecodedInstruction* addyOfInReg, st
         // HERE THERE IS SPACE IN THE ALU_RV AND SO WE CAN ISSUE AN INSTRUCTION TO IT
         // Here we push out new parsed/decoded inst into the RV and we can set the previously undecoded instruction to EMPTY
         //cout << "ParsedInst just before being pushed into the RV ::" << inst.state << endl;
-        RV->push_back(std::pair<DecodedInstruction, int>(inst, -1));
+        //DecodedInstruction temp = *inst;
+        RV->push_back(std::pair<DecodedInstruction, int>(*inst, -1));
 
-        addyOfInReg->state = EMPTY;
+        inst->state = EMPTY;//addyOfInReg->state = EMPTY;
 
-        cout << "Loaded instruction " << inst.asString << " into RV. Decoded instruction: "; inst.print();
+        cout << "Loaded instruction " << inst->asString << " into RV. Decoded instruction: "; inst->print();
     }
 
 }
@@ -587,13 +590,22 @@ void flushRV(std::deque<std::pair<DecodedInstruction, int>>* RV, int thisSideOfB
 
 // Flushes the whole pipline
 void flushPipeline(int thisSideOfBranch){
-    for (int i = 0; i < IF_IDI.size(); i++){
-        IF_IDI[i].state = EMPTY;
+    for (int i = 0; i < IF_ID.size(); i++){
+        IF_ID[i].state = EMPTY;
     }
 
     IF_inst = array<string, SUPERSCALAR_WIDTH>();
 
-    IDI_inst = array<string, SUPERSCALAR_WIDTH>();
+    //IDI_inst = array<string, SUPERSCALAR_WIDTH>();
+
+    for (int i = 0; i < ID_I.size(); i++){
+        if (ID_I[i].sideOfBranch != thisSideOfBranch){
+            ID_I[i] = DecodedInstruction();
+        }
+    }
+    ID_gui = array<DecodedInstruction, SUPERSCALAR_WIDTH>();
+
+    I_gui = array<DecodedInstruction, SUPERSCALAR_WIDTH>();
 
     //int sideOfBranchToRemove = (thisSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES;
     // Flush the ALUs (if need)
@@ -650,7 +662,7 @@ void cycle(){
     // Pipelined
     //writeBack(); /*complete();*/ execute(); issue(); decode(); fetch();
 
-    writeBack(); commit(); execute();  decodeIssue(); fetch();
+    writeBack(); commit(); execute(); issue(); decode(); fetch();
 
     //HazardDetectionUnit->printRAW();
 
@@ -658,11 +670,17 @@ void cycle(){
     for (string i : IF_inst){
         cout << i << "   ||   ";
     } cout << endl;
-    cout << "Current instruction(s) in the IDI: ";
-    for (DecodedInstruction d : IDI_gui){
+    cout << "Current instruction(s) in the ID: ";
+    for (DecodedInstruction d : ID_gui){
         d.printHuman();
         cout << "   ||   ";
     } cout << endl;
+    cout << "Current instruction(s) in the I: ";
+    for (DecodedInstruction i : I_gui){
+        i.printHuman();
+        cout << "   ||   ";
+    } cout << endl;
+
 
     //cout << "Current instruction in the I:  " << I_inst << endl;
     cout << "Current instruction(s) in ALU0: "; ALUs.at(0)->currentInst.printHuman(); std::cout << "\tALU1: "; ALUs.at(1)->currentInst.printHuman(); std::cout << "\tBU: "; BUs.at(0)->currentInst.printHuman(); std::cout << "\tLSU: "; LSUs.at(0)->currentInst.printHuman(); std::cout << std::endl;
@@ -742,9 +760,9 @@ void run(){
 void fetch(){
 
     // Run through every channel of the processor
-    for (int i = 0; i < IF_IDI.size(); i++){
+    for (int i = 0; i < IF_ID.size(); i++){
 
-        if (IF_IDI[i].state == BLOCK || IF_IDI[i].state == CURRENT){
+        if (IF_ID[i].state == BLOCK || IF_ID[i].state == CURRENT){
                 // We cannot collect any instructions from memory and pass it into IF_ID_Inst
                 cout << "Fetch() BLOCKED" << endl;
                 IF_inst[i] = "";
@@ -752,24 +770,24 @@ void fetch(){
             }
         // else if IF_ID_Inst.state = NEXT or EMPTY - it shouldnt be equal to NEXT here but we check anyway
 
-        IF_IDI[i].state = CURRENT;
+        IF_ID[i].state = CURRENT;
         
         // Load the memory address that is in the instruction memory address that is pointed to by the PC
-        IF_IDI[i].instruction = instrMemory.at(PC);
+        IF_ID[i].instruction = instrMemory.at(PC);
 
         PC++;
 
         // Debugging/GUI to show the current instr in the processor
-        IF_inst[i] = IF_IDI[i].instruction;
+        IF_inst[i] = IF_ID[i].instruction;
 
-        if (IF_IDI[i].instruction.empty()) {
-            IF_IDI[i].state = EMPTY;
+        if (IF_ID[i].instruction.empty()) {
+            IF_ID[i].state = EMPTY;
             return;
         } else {
             // If it is not empty then we have successfully fetched the instruction
-            IF_IDI[i].state = NEXT;
+            IF_ID[i].state = NEXT;
 
-            std::cout << "CIR has current value: " << IF_IDI[i].instruction << std::endl;
+            std::cout << "CIR has current value: " << IF_ID[i].instruction << std::endl;
         }
 
         // INCORRECT \/\/
@@ -783,18 +801,24 @@ void fetch(){
 }
 
 // Combined Instruction Decode with Issue
-void decodeIssue(){
+void decode(){
     // Cycle through every channel
-    for (int i = 0; i < IF_IDI.size(); i++){
+    for (int i = 0; i < ID_I.size(); i++){
+        if (ID_I[i].state == CURRENT || ID_I[i].state == BLOCK || ID_I[i].state == NEXT){
+
+            IF_ID[i].state = BLOCK;
+            // Debugging/gui
+            ID_gui[i] = DecodedInstruction();
+            continue;
+        }
 
         // State checking for previous registers
-        if (IF_IDI[i].state == NEXT || IF_IDI[i].state == BLOCK || IF_IDI[i].state == CURRENT){
-                IF_IDI[i].state = CURRENT;
+        if (IF_ID[i].state == NEXT || IF_ID[i].state == BLOCK || IF_ID[i].state == CURRENT){
+                IF_ID[i].state = CURRENT;
         }
         else {
             // Decode() cannot be run with no inputs and so we return
-
-            IDI_gui[i] = DecodedInstruction();
+            ID_gui[i] = DecodedInstruction();
             continue;
         }
         
@@ -805,7 +829,7 @@ void decodeIssue(){
         parsedInst.uniqueInstructionIdentifer = currentUniqueInstructionIdentifier;     // Give the current instruction an identifier
         currentUniqueInstructionIdentifier++;                                           // Update currentUniqueInstructionIdentifier for the next instruciton that enters IDI in the pipeline
         
-        std::vector<std::string> splitCIR = split(IF_IDI[i].instruction, ' '); // split the instruction based on ' ' and decode instruction like that
+        std::vector<std::string> splitCIR = split(IF_ID[i].instruction, ' '); // split the instruction based on ' ' and decode instruction like that
         
         // Throws error if there isn't any instruction to be loaded
         if (splitCIR.size() == 0) throw std::invalid_argument("No instruction loaded");
@@ -916,9 +940,9 @@ void decodeIssue(){
                     // If there are no usable registers in the PRF then we cannot continue and so the IF/IDI register must block
                     if (Prd == -1){
                         cout << "THE ENTIRE PRF IS BEING USED UP" << endl;
-                        IF_IDI[i].state = BLOCK;
+                        IF_ID[i].state = BLOCK;
 
-                        IDI_gui[i] = DecodedInstruction();
+                        ID_gui[i] = DecodedInstruction();
                         continue;
                         
                     } else {
@@ -957,11 +981,11 @@ void decodeIssue(){
         //cout << "after initial register renaming, parsedInst is ::" << parsedInst.state << endl;
 
         // SUPER IMPORTANT - THIS IS THE PREVIOUS VALUE OF THE PC TO USE THE CORRECT OLD VALUE OF IT AND NOT THE NEW VALUE
-        parsedInst.OUT = IF_IDI[i].PC;     // It is only set to the PC for the single instruction JMPI (indexed JMP)
+        parsedInst.OUT = IF_ID[i].PC;     // It is only set to the PC for the single instruction JMPI (indexed JMP)
            
         // Debuggin/GUI
-        parsedInst.asString = IF_IDI[i].instruction;
-        IDI_gui[i] = parsedInst;
+        parsedInst.asString = IF_ID[i].instruction;
+        ID_gui[i] = parsedInst;
 
         // instruction set to NEXT here as the RegisterRenameValidityCheck(.) line updates it to BLOCK if required
         //parsedInst.state = NEXT;
@@ -973,27 +997,44 @@ void decodeIssue(){
 
         //cout << "After ROB loading, parsedInst is ::" << parsedInst.state << endl;
 
-        if (IsParsedInstLoadedIntoROB) {
+        ID_I[i] = parsedInst;
+
+        IF_ID[i].state = EMPTY;
+    }
+}
+
+// issue stage
+void issue(){
+    for (int i = 0; i < ID_I.size(); i++){
+
+        // Debugging and gui
+        I_gui[i] = DecodedInstruction();
+
+        bool IsInstInROB = ReorderBuffer->IsInstInROB(ID_I[i]);
+
+        if (IsInstInROB) {
             ////////////////////////////
             ///// ISSUING INTO RVS /////
             ///////////////////////////
+            I_gui[i] = ID_I[i];
 
             // ALU
-            if ( (parsedInst.OpCode >= ADD && parsedInst.OpCode <= CMP) || parsedInst.OpCode == MV || (parsedInst.OpCode >= AND && parsedInst.OpCode <= RSHFT) ){
-                issueIntoRV(parsedInst, &IF_IDI[i], &ALU_RV, MAX_RV_SIZE);
+            if ( (ID_I[i].OpCode >= ADD && ID_I[i].OpCode <= CMP) || ID_I[i].OpCode == MV || (ID_I[i].OpCode >= AND && ID_I[i].OpCode <= RSHFT) ){
+                issueIntoRV(&ID_I[i], &ALU_RV, MAX_RV_SIZE);
             }
             // BU
-            else if (parsedInst.OpCode >= JMP && parsedInst.OpCode <= BZ || parsedInst.OpCode == HALT || parsedInst.OpCode == NOP) {
-                issueIntoRV(parsedInst, &IF_IDI[i], &BU_RV, MAX_RV_SIZE);
+            else if (ID_I[i].OpCode >= JMP && ID_I[i].OpCode <= BZ || ID_I[i].OpCode == HALT || ID_I[i].OpCode == NOP) {
+                issueIntoRV(&ID_I[i], &BU_RV, MAX_RV_SIZE);
             }
 
             // LSU
-            else if (parsedInst.OpCode >= LD && parsedInst.OpCode <= STOA) {
-                issueIntoRV(parsedInst, &IF_IDI[i], &LSU_RV,MAX_RV_SIZE);
+            else if (ID_I[i].OpCode >= LD && ID_I[i].OpCode <= STOA) {
+                issueIntoRV(&ID_I[i], &LSU_RV,MAX_RV_SIZE);
             }  
             else {
                 throw std::invalid_argument("Could no issue an unknown instruction: " + ID_I_Inst.OpCode);
             }
+
         }
 
 
