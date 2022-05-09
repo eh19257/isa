@@ -517,7 +517,7 @@ class LSU : public ExecutionUnit{
 
         switch(In.OpCode){
             case LD:
-                Out.OUT = In.rs0;
+                Out.OUT = In.IN0;
                 
                 //this->writeBackFlag = true;
                 break;
@@ -546,21 +546,21 @@ class LSU : public ExecutionUnit{
             //    registerFile[ALUD] = dataMemory[dataMemory[In.IN0]];
             //    break;
             case LDA:
-                Out.OUT = In.rs0 + In.rs1;
+                Out.OUT = In.IN0 + In.IN1;
                 //Out.DEST = In.DEST;
 
                 //this->writeBackFlag = true;
                 break;
 
             case STO:
-                Out.OUT = In.rs0;
+                Out.OUT = In.IN0;
 
                 //this->writeBackFlag = false;
                 break;
 
             case STOI:                   // #####################
                 Out.DEST = In.IMM;
-                Out.OUT = In.rs0;
+                Out.OUT = In.IN0;
                 
                 //memoryData->at(In.IMM) = In.IN0;
 
@@ -568,8 +568,8 @@ class LSU : public ExecutionUnit{
                 break;
             
             case STOA:
-                //Out.DEST = In.DEST;// + In.IN0;
-                Out.OUT = In.rs1;
+                Out.DEST = In.DEST + In.IN0;// + In.IN0;
+                Out.OUT = In.IN1;
                 
                 //memoryData->at(In.DEST + In.IN0) = In.IN1;
 

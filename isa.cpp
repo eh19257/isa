@@ -657,21 +657,12 @@ void CommitMemoryOperation(DecodedInstruction inst){
         PhysRegisterFile.at(inst.DEST).first = dataMemory.at(inst.OUT);
         PhysRegisterFile.at(inst.DEST).second = true;
         cout << "Memory Inst "; inst.printHuman(); cout << " is LOADED into PRF. Decoded inst: "; inst.print();
-    } 
-    else if (inst.OpCode == STOI) {
-        cout << "Memory Inst "; inst.printHuman(); cout << " is STORED in memory. Decoded inst: "; inst.print();
-
-        dataMemory.at(inst.DEST) = PhysRegisterFile.at(inst.OUT).first;
     }
-    else if (inst.OpCode >= STO) {
+    else if (inst.OpCode >= STO && inst.OpCode <= STOA) {
         cout << "Memory Inst "; inst.printHuman(); cout << " is STORED in memory. Decoded inst: "; inst.print();
 
-        dataMemory.at(PhysRegisterFile.at(inst.DEST).first) = PhysRegisterFile.at(inst.OUT).first;
+        dataMemory.at(inst.DEST) = inst.OUT;
 
-    } else if (inst.OpCode == STOI) {
-        cout << "Memory Inst "; inst.printHuman(); cout << " is STORED in memory. Decoded inst: "; inst.print();
-
-        dataMemory.at(PhysRegisterFile.at(inst.DEST).first + PhysRegisterFile.at(inst.rs0).first) = PhysRegisterFile.at(inst.OUT).first;
     } else {
         throw std::invalid_argument("Not a memory access instruction");
     }
