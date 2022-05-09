@@ -653,18 +653,31 @@ void flushPipeline(int thisSideOfBranch){
 
 void CommitMemoryOperation(DecodedInstruction inst){
 
-
     if (inst.OpCode >= LD && inst.OpCode <= LDA && inst.OpCode != LDI){
         PhysRegisterFile.at(inst.DEST).first = dataMemory.at(inst.OUT);
-    }    
-    else if (inst.OpCode >= STO && inst.OpCode <= STOA) {
+        PhysRegisterFile.at(inst.DEST).second = true;
+        cout << "Memory Inst "; inst.printHuman(); cout << " is LOADED into PRF. Decoded inst: "; inst.print();
+    } 
+    else if (inst.OpCode == STOI) {
+        cout << "Memory Inst "; inst.printHuman(); cout << " is STORED in memory. Decoded inst: "; inst.print();
+
         dataMemory.at(inst.DEST) = PhysRegisterFile.at(inst.OUT).first;
+    }
+    else if (inst.OpCode >= STO) {
+        cout << "Memory Inst "; inst.printHuman(); cout << " is STORED in memory. Decoded inst: "; inst.print();
+
+        dataMemory.at(PhysRegisterFile.at(inst.DEST).first) = PhysRegisterFile.at(inst.OUT).first;
+
+    } else if (inst.OpCode == STOI) {
+        cout << "Memory Inst "; inst.printHuman(); cout << " is STORED in memory. Decoded inst: "; inst.print();
+
+        dataMemory.at(PhysRegisterFile.at(inst.DEST).first + PhysRegisterFile.at(inst.rs0).first) = PhysRegisterFile.at(inst.OUT).first;
     } else {
         throw std::invalid_argument("Not a memory access instruction");
     }
 
     // Then set the register in the PRF back to valid
-    PhysRegisterFile.at(inst.OUT).second = true;
+    //PhysRegisterFile.at(inst.DEST).second = true;
 }
 
 #pragma endregion Commit Helpers
@@ -1014,9 +1027,11 @@ void decode(){
         // instruction set to NEXT here as the RegisterRenameValidityCheck(.) line updates it to BLOCK if required
         //parsedInst.state = NEXT;
 
+        //////////////////////////
+        ///// ROB AND COMMIT /////
+        /////                /////
         // Load instruction into ROB if it isn't full
         bool IsParsedInstLoadedIntoROB = ReorderBuffer->LoadInstructionIntoTheROB(parsedInst);
-        
         
         parsedInst = ReorderBuffer->BlockInstructionIfNotIsWriteBack(parsedInst);
 
@@ -1188,7 +1203,7 @@ void writeBack(){
 
         std::pair<DecodedInstruction, Optional<int>> entry = ReorderBuffer->ReorderBuffer.at(i);
 
-        if ((entry.first.state != NEXT && !entry.first.IsMemoryOperation) || (entry.first.state == BLOCK && !entry.first.IsMemoryOperation)) {
+        if ((entry.first.state == CURRENT && !entry.first.IsMemoryOperation) || (entry.first.state == BLOCK && entry.first.IsMemoryOperation)) {
             break;
         }
 
@@ -1204,7 +1219,7 @@ void writeBack(){
         if (entry.first.IsMemoryOperation && entry.first.state == CURRENT) {
             // Handle memory access operations
             // On a memory operation we dont kill it straight away, we wait til next time so that any instructions inthe RVs can be updated
-
+            cout << "Commiting memoryOperation" << endl;
             CommitMemoryOperation(entry.first);
             // Tell the ROB that the instruction is complete
             ReorderBuffer->ReorderBuffer.at(i).first.state = NEXT;

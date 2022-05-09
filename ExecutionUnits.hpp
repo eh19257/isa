@@ -91,9 +91,11 @@ class ROB {
 
                 // If the instruction matches
                 if (entry.first.uniqueInstructionIdentifer == inst.uniqueInstructionIdentifer){
+
+                    ReorderBuffer.at(i).first = inst;
+
                     // handle for when an instruction is writeback
-                    if (entry.first.IsWriteBack){
-                        ReorderBuffer.at(i).first = inst;
+                    if (entry.first.IsWriteBack && !entry.first.IsMemoryOperation){
                         ReorderBuffer.at(i).second.Value(inst.OUT);
                     }
 
@@ -448,7 +450,6 @@ class LSU : public ExecutionUnit{
         this->Out = this->In;
         
         // Update the stats of In and Out such that the EUs can run without getting interference with the states
-        this->Out.state = EMPTY;
         this->In.state = CURRENT;
 
         std::cout << "LSU cycle called" << std::endl;
@@ -516,7 +517,7 @@ class LSU : public ExecutionUnit{
 
         switch(In.OpCode){
             case LD:
-                Out.OUT = In.IN0;
+                Out.OUT = In.rs0;
                 
                 //this->writeBackFlag = true;
                 break;
@@ -545,21 +546,21 @@ class LSU : public ExecutionUnit{
             //    registerFile[ALUD] = dataMemory[dataMemory[In.IN0]];
             //    break;
             case LDA:
-                Out.OUT = In.IN0 + In.IN1;
+                Out.OUT = In.rs0 + In.rs1;
                 //Out.DEST = In.DEST;
 
                 //this->writeBackFlag = true;
                 break;
 
             case STO:
-                Out.OUT = In.IN0;
+                Out.OUT = In.rs0;
 
                 //this->writeBackFlag = false;
                 break;
 
             case STOI:                   // #####################
                 Out.DEST = In.IMM;
-                Out.OUT = In.IN0;
+                Out.OUT = In.rs0;
                 
                 //memoryData->at(In.IMM) = In.IN0;
 
@@ -567,8 +568,8 @@ class LSU : public ExecutionUnit{
                 break;
             
             case STOA:
-                Out.DEST = In.DEST + In.IN0;
-                Out.OUT = In.IN1;
+                //Out.DEST = In.DEST;// + In.IN0;
+                Out.OUT = In.rs1;
                 
                 //memoryData->at(In.DEST + In.IN0) = In.IN1;
 
