@@ -135,12 +135,12 @@ bool CheckIfWriteOnly(DecodedInstruction inst);
 int GetUnusedRegisterInPRF();
 bool IsRegisterValidForExecution(int* reg, int* val, int uniqueIdentifierForCurrentInst);
 DecodedInstruction RegisterRenameValidityCheck(DecodedInstruction inst);
-DecodedInstruction CheckBothRegistersAreValidForFurtherExecution(DecodedInstruction inst);
+void CheckBothRegistersAreValidForFurtherExecution(DecodedInstruction* inst);
 DecodedInstruction CheckDestinationRegisterIsValid(DecodedInstruction inst);
 
 
 /* Commit helpers */
-void CommitMemoryOperation(DecodedInstruction inst);
+void CommitMemoryOperation(DecodedInstruction* inst);
 
 /* Non-ISA function headers */
 void loadProgramIntoMemory();
@@ -315,44 +315,45 @@ bool IsRegisterValidForExecution(int* reg, int* val, int uniqueIdentifierForCurr
     if (*reg == -1) return true;
 
     // If the valid bit is true
-    if (PhysRegisterFile.at(*reg).second){
+    if (PhysRegisterFile.at(*reg).second && PhysRegisterFile.at(*reg).first == *val){
         return true;
     } else {
         // If the valid bit is not true then we can check the ROB for any valid values - this is the newer version of the RAW table
         // If an entry is found such that the instruction has been completed then it will return true (as it is valid) and then also update the value for the instruction
-        return ReorderBuffer->CheckROBForForwardedValues(reg, val, uniqueIdentifierForCurrentInst);
+        cout << "WE ARE TRYING TO GET THE FORWARDED VALUES for register " << *reg << endl;
+        return ReorderBuffer->CheckROBForForwardedValues(&reg, &val, uniqueIdentifierForCurrentInst);
     }
 }
 
 // Checks if an instruction's validity based on the validity of the 2 source registers (returned inst can BLOCK or NEXT)
-DecodedInstruction CheckBothRegistersAreValidForFurtherExecution(DecodedInstruction inst){
-    bool IsRs0Valid = IsRegisterValidForExecution(&inst.rs0, &inst.IN0, inst.uniqueInstructionIdentifer);
-    bool IsRs1Valid = IsRegisterValidForExecution(&inst.rs1, &inst.IN1, inst.uniqueInstructionIdentifer);
+void CheckBothRegistersAreValidForFurtherExecution(DecodedInstruction* inst){
+    bool IsRs0Valid = IsRegisterValidForExecution(&inst->rs0, &inst->IN0, inst->uniqueInstructionIdentifer);
+    bool IsRs1Valid = IsRegisterValidForExecution(&inst->rs1, &inst->IN1, inst->uniqueInstructionIdentifer);
 
     if (IsRs0Valid && IsRs1Valid){
-        inst.state = NEXT;
+        inst->state = NEXT;
     } else {
-        inst.state = BLOCK;
+        inst->state = BLOCK;
     }
 
-    return inst;
+    //return inst;
 }
 
-DecodedInstruction CheckDestinationRegisterIsValid(DecodedInstruction inst){
+void CheckDestinationRegisterIsValid(DecodedInstruction* inst){
     // If this instruction doesn't writeback then we also need to check the validity of it's RD
-    if (!inst.IsWriteBack){
-        if (inst.state == NEXT){
-            bool IsRdValid = IsRegisterValidForExecution(&inst.rd, &inst.DEST, inst.uniqueInstructionIdentifer);
+    if (!inst->IsWriteBack){
+        if (inst->state == NEXT){
+            bool IsRdValid = IsRegisterValidForExecution(&inst->rd, &inst->DEST, inst->uniqueInstructionIdentifer);
 
             // If the instruction already == NEXT and the destination is valid then we can set To NEXT, else BLOCK
-            if (IsRdValid && inst.state == NEXT) {
-                inst.state = NEXT;
+            if (IsRdValid && inst->state == NEXT) {
+                inst->state = NEXT;
             } else {
-                inst.state = BLOCK;
+                inst->state = BLOCK;
             }
         }
     }
-    return inst;
+    //return inst;
 }
 
 // Checks both source registers to see if they are valid for further execution
@@ -394,25 +395,35 @@ DecodedInstruction RegisterRenameValidityCheck(DecodedInstruction inst){
 
 void ForwardResultsToRVs(){
     for (int i = 0; i < ALU_RV.size(); i++) {
-        ALU_RV.at(i).first = CheckBothRegistersAreValidForFurtherExecution(ALU_RV.at(i).first);
-        ALU_RV.at(i).first = CheckDestinationRegisterIsValid(ALU_RV.at(i).first);
+
+        cout << "Instruction: "; ALU_RV.at(i).first.printHuman(); cout << " in ALU. Decoded as "; ALU_RV.at(i).first.print();
+
+        CheckBothRegistersAreValidForFurtherExecution(&ALU_RV.at(i).first);
+
+        if (!ALU_RV.at(i).first.IsWriteBack) CheckDestinationRegisterIsValid(&ALU_RV.at(i).first);
+        
 
         //ALU_RV.at(i).first = ReorderBuffer->BlockInstructionIfNotIsWriteBack(ALU_RV.at(i).first);
 
         ALU_RV.at(i).second++;      // Increases the "age" of the instruction being in the RV        
+
+
+        cout << "Decode after: "; ALU_RV.at(i).first.print();
     }
 
     for (int i = 0; i < BU_RV.size(); i++)   {
-        BU_RV.at(i).first = CheckBothRegistersAreValidForFurtherExecution(BU_RV.at(i).first);
-        BU_RV.at(i).first = CheckDestinationRegisterIsValid(BU_RV.at(i).first);
+        CheckBothRegistersAreValidForFurtherExecution(&BU_RV.at(i).first);
+       
+        if (!BU_RV.at(i).first.IsWriteBack) CheckDestinationRegisterIsValid(&BU_RV.at(i).first);
 
         //BU_RV.at(i).first = ReorderBuffer->BlockInstructionIfNotIsWriteBack(BU_RV.at(i).first);
 
         BU_RV.at(i).second++;       // Increases the "age" of the instruction being in the RV
     }
     for (int i = 0; i < LSU_RV.size(); i++) {
-        LSU_RV.at(i).first = CheckBothRegistersAreValidForFurtherExecution(LSU_RV.at(i).first); 
-        LSU_RV.at(i).first = CheckDestinationRegisterIsValid(LSU_RV.at(i).first);
+        CheckBothRegistersAreValidForFurtherExecution(&LSU_RV.at(i).first); 
+        
+        if (!LSU_RV.at(i).first.IsWriteBack) CheckDestinationRegisterIsValid(&LSU_RV.at(i).first);
 
         //LSU_RV.at(i).first = ReorderBuffer->BlockInstructionIfNotIsWriteBack(LSU_RV.at(i).first);
 
@@ -651,17 +662,19 @@ void flushPipeline(int thisSideOfBranch){
 
 #pragma region Commit Helpers
 
-void CommitMemoryOperation(DecodedInstruction inst){
+void CommitMemoryOperation(DecodedInstruction* inst){
 
-    if (inst.OpCode >= LD && inst.OpCode <= LDA && inst.OpCode != LDI){
-        PhysRegisterFile.at(inst.DEST).first = dataMemory.at(inst.OUT);
-        PhysRegisterFile.at(inst.DEST).second = true;
-        cout << "Memory Inst "; inst.printHuman(); cout << " is LOADED into PRF. Decoded inst: "; inst.print();
+    if (inst->OpCode >= LD && inst->OpCode <= LDA && inst->OpCode != LDI){
+        inst->OUT = dataMemory.at(inst->OUT);
+        
+        PhysRegisterFile.at(inst->DEST).first = inst->OUT;
+        PhysRegisterFile.at(inst->DEST).second = true;
+        cout << "Memory Inst "; inst->printHuman(); cout << " is LOADED into PRF. Decoded inst: "; inst->print();
     }
-    else if (inst.OpCode >= STO && inst.OpCode <= STOA) {
-        cout << "Memory Inst "; inst.printHuman(); cout << " is STORED in memory. Decoded inst: "; inst.print();
+    else if (inst->OpCode >= STO && inst->OpCode <= STOA) {
+        cout << "Memory Inst "; inst->printHuman(); cout << " is STORED in memory. Decoded inst: "; inst->print();
 
-        dataMemory.at(inst.DEST) = inst.OUT;
+        dataMemory.at(inst->DEST) = inst->OUT;
 
     } else {
         throw std::invalid_argument("Not a memory access instruction");
@@ -755,7 +768,7 @@ void cycle(){
     }
 
     cout << "\n\n" << endl;
-    if (PRINT_REGISTERS_FLAG) printArchRegisterFile(10);
+    if (PRINT_REGISTERS_FLAG) printArchRegisterFile(25);
     if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
 
     std::cout << "---------- Cycle " << numOfCycles << " completed. ----------\n"<< std::endl;
@@ -1211,7 +1224,13 @@ void writeBack(){
             // Handle memory access operations
             // On a memory operation we dont kill it straight away, we wait til next time so that any instructions inthe RVs can be updated
             cout << "Commiting memoryOperation" << endl;
-            CommitMemoryOperation(entry.first);
+            CommitMemoryOperation(&ReorderBuffer->ReorderBuffer.at(i).first);
+
+            // If the instrucion is a writeback memory op (i.e. and LOAD) then we need to dump the value into the ROB - this is so the ROB acts like a RAW table or common data bus
+            if (entry.first.IsWriteBack){
+                ReorderBuffer->ReorderBuffer.at(i).second.Value(ReorderBuffer->ReorderBuffer.at(i).first.OUT);
+            }
+
             // Tell the ROB that the instruction is complete
             ReorderBuffer->ReorderBuffer.at(i).first.state = NEXT;
         } else {

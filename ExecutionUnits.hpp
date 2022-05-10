@@ -129,23 +129,27 @@ class ROB {
         }
     
          // Returns false if an an entry was found in the ROB and it has not completed excution
-        bool CheckROBForForwardedValues(int* reg, int* val, int uniqueIdentifierForCurrentInst){
+        bool CheckROBForForwardedValues(int** reg, int** val, int uniqueIdentifierForCurrentInst){
             for (int i = 0; i < ReorderBuffer.size(); i++){
                 if (ReorderBuffer.at(i).first.uniqueInstructionIdentifer == uniqueIdentifierForCurrentInst){
                     // This has to be done so we dont get an instruction waiting for itself
                     continue;
                 }
                 
-                if (ReorderBuffer.at(i).first.rd == *reg && ReorderBuffer.at(i).first.IsWriteBack){
+                if (ReorderBuffer.at(i).first.rd == **reg && ReorderBuffer.at(i).first.IsWriteBack){
                     if (ReorderBuffer.at(i).first.state == NEXT && ReorderBuffer.at(i).second.HasValue()){
                         
                         // Update the value and then return true (it has been found and successfully updated and therefore it is valid)
-                        *val = ReorderBuffer.at(i).second.Value();
+                        int foo = ReorderBuffer.at(i).second.Value();
+                        std::cout << "The register " << **reg << " should have the new value "  << foo << std::endl;
+                        
+                        **val = foo;
                         return true;
 
                     } else {
                         //std::cout << *reg << " and val: " << *val << " are clashing with the instruction "; ReorderBuffer.at(i).first.printHuman();
                         //std::cout << std::endl;
+                        std::cout << "We actually get NO result" << std::endl;
                         return false;
                     }
                 }
@@ -242,7 +246,7 @@ class ALU : public ExecutionUnit{
         // Now properly update the output register such that the output values are the correct, calculated values
         switch(In.OpCode){
             case ADD:                   // #####################
-                Out.OUT = In.IN0 + In.IN1;;     
+                Out.OUT = In.IN0 + In.IN1;     
                 break;
 
             case ADDI:

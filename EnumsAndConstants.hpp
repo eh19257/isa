@@ -55,7 +55,7 @@ enum FP_Register {FP0, FP1, FP2, FP3};
 enum InstState {EMPTY, CURRENT, NEXT, BLOCK};
 
 /* Execution States of a single EU */
-enum EUState {IDLE, READY, RUNNING, DONE};
+//enum EUState {IDLE, READY, RUNNING, DONE};
 
 /* NonDecodedInstruction - Only used in IF*/
 struct NonDecodedInstruction {
