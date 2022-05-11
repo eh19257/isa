@@ -91,7 +91,7 @@ class ROB {
 
                 // If the instruction matches
                 if (entry.first.uniqueInstructionIdentifer == inst.uniqueInstructionIdentifer){
-                    std::cout << "FOUND IN ROB: "; inst.printHuman(); std::cout << std::endl;
+                    //std::cout << "FOUND IN ROB: "; inst.printHuman(); std::cout << std::endl;
                     ReorderBuffer.at(i).first = inst;
 
                     // handle for when an instruction is writeback
@@ -124,41 +124,60 @@ class ROB {
                     inst.state = CURRENT;
                 }
                 
+                // Position the inst in the correct place in the ROB
+                for (int i = 0; i < ReorderBuffer.size(); i++){
+                    if (ReorderBuffer.at(i).first.uniqueInstructionIdentifer > inst.uniqueInstructionIdentifer){
+                        ReorderBuffer.insert(ReorderBuffer.begin() + i, std::pair<DecodedInstruction, Optional<int>>(inst, Optional<int>()));
+                        return true;
+                    }
+                }
+                // If we cannot find a specific place to insert the instuction, then we push it onto the back
                 ReorderBuffer.push_back(std::pair<DecodedInstruction, Optional<int>>(inst, Optional<int>()));
                 return true;
             }
         }
     
          // Returns false if an an entry was found in the ROB and it has not completed excution
-        bool CheckROBForForwardedValues(int** reg, int** val, int uniqueIdentifierForCurrentInst){
+        bool CheckROBForForwardedValues(int* reg, int* val, int uniqueIdentifierForCurrentInst){
             for (int i = 0; i < ReorderBuffer.size(); i++){
                 if (ReorderBuffer.at(i).first.uniqueInstructionIdentifer == uniqueIdentifierForCurrentInst){
                     // This has to be done so we dont get an instruction waiting for itself
                     continue;
                 }
                 
-                if (ReorderBuffer.at(i).first.rd == **reg && ReorderBuffer.at(i).first.IsWriteBack){
+                if (ReorderBuffer.at(i).first.rd == *reg && ReorderBuffer.at(i).first.IsWriteBack){
                     if (ReorderBuffer.at(i).first.state == NEXT && ReorderBuffer.at(i).second.HasValue()){
                         
                         // Update the value and then return true (it has been found and successfully updated and therefore it is valid)
                         int foo = ReorderBuffer.at(i).second.Value();
-                        std::cout << "The register " << **reg << " should have the new value "  << foo << std::endl;
+                        //std::cout << "The register " << *reg << " should have the new value "  << foo << std::endl;
                         
-                        **val = foo;
+                        *val = foo;
                         return true;
 
                     } else {
                         //std::cout << *reg << " and val: " << *val << " are clashing with the instruction "; ReorderBuffer.at(i).first.printHuman();
                         //std::cout << std::endl;
-                        std::cout << "We actually get NO result" << std::endl;
+                        //std::cout << "We actually get NO result" << std::endl;
                         return false;
                     }
                 }
             }
-            std::cout << "RETURNED TRUE!!!" << std::endl;
+            //std::cout << "RETURNED TRUE!!!" << std::endl;
             return true;
         }
 
+
+        // Similar to the above but it returns false if it isn't found in the reg
+        bool IsRegInROB(int* reg, int* val, int uniqueIdentifierForCurrentInst){
+            int tempVal = *val;
+            bool IsFowardedValueInROB = this->CheckROBForForwardedValues(reg, val, uniqueIdentifierForCurrentInst);
+
+            if (IsFowardedValueInROB && tempVal == *val){
+                return false;
+            }
+            return IsFowardedValueInROB;
+        }
 
         DecodedInstruction BlockInstructionIfNotIsWriteBack(DecodedInstruction inst){
             // If this is a write back instruction then we can ignore this special case and use the ROB as it was intended

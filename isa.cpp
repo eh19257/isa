@@ -42,7 +42,7 @@ int PC;                     // Program Counter
 std::string CIR;            // Current Instruction Register
 int IMMEDIATE;              // Immediate register used for immediate addressing
 
-NonDecodedInstruction IF_ID_Inst;   // WARNING THIS IS A NON decoded instruction that is ONLY USED ONCE (here in IF)
+//NonDecodedInstruction IF_ID_Inst;   // WARNING THIS IS A NON decoded instruction that is ONLY USED ONCE (here in IF)
 std::array<NonDecodedInstruction, SUPERSCALAR_WIDTH> IF_ID;
 std::array<DecodedInstruction, SUPERSCALAR_WIDTH> ID_I; 
 
@@ -183,6 +183,8 @@ int currentSideOfBranch = 0;            // A global variable that keeps track of
                                         // the instructions a number associated with the side of the branch. If the instruction is a branch then we increment this global value.
                                         // When we flush the pipline, we remove the instructions which have a different sideOfBranch as the BRANCH instruction
 int currentUniqueInstructionIdentifier = 0;     // Tracks which is the current unique instruction identifier
+bool IsIssuingLeftToRight = true;           // This is used so that when the RVs are filling up the ID_I registers dont issue just from the left most register (register 0), this means that issuing is done evenly for each register
+
 
 #pragma region debugging
 
@@ -232,6 +234,7 @@ void printArchRegisterFile(int maxReg){
 }
 
 void printPhysRegisterFile(){
+    std::cout << "PC: " << PC - 1 << "\tbranching? " << BUs.at(0)->branchFlag << "\tHalting? " << systemHaltFlag << "\n" << endl;
     for (int i = 0; i < (int) SIZE_OF_REGISTER_FILE/2; i++){
         for (int j = 0; j < 8; j++){
             std::cout << "PR" << (i)*8 + j << ": " << PhysRegisterFile.at(i*8 + j).first << "\t[" << PhysRegisterFile.at(i*8 + j).second << "]\t\t";
@@ -285,13 +288,13 @@ int GetUnusedRegisterInPRF(){
     int foo = IndexOfLastRegisterUsedInPRF;
 
     // iterate through the x - n registers in the PRF
-    cout << "size of PRF: " << PhysRegisterFile.size() << endl;
-    cout << "IndexOfLastRegisterUsedInPRF: " << IndexOfLastRegisterUsedInPRF << endl;
+    //cout << "size of PRF: " << PhysRegisterFile.size() << endl;
+    //cout << "IndexOfLastRegisterUsedInPRF: " << IndexOfLastRegisterUsedInPRF << endl;
     
     while (foo < ((int) PhysRegisterFile.size() - 1)) {
         foo = foo + 1;
         if (PhysRegisterFile.at(foo).second) {
-            cout << "foo: " << foo << endl;
+            //cout << "foo: " << foo << endl;
             IndexOfLastRegisterUsedInPRF = foo;
             return IndexOfLastRegisterUsedInPRF;
         }
@@ -301,12 +304,12 @@ int GetUnusedRegisterInPRF(){
     while (bar < IndexOfLastRegisterUsedInPRF){
         bar = bar + 1;
         if (PhysRegisterFile.at(bar).second) {
-            cout << "bar: " << foo << endl;
+            //cout << "bar: " << foo << endl;
             IndexOfLastRegisterUsedInPRF = bar;
             return IndexOfLastRegisterUsedInPRF;
         }
     }
-    cout << "This is run" << endl;
+    //cout << "This is run" << endl;
     // if there aren't any registers avaliable (i.e. they are all in use which is very unlikely), then return -1
     IndexOfLastRegisterUsedInPRF = -1;
     return IndexOfLastRegisterUsedInPRF;
@@ -331,8 +334,8 @@ bool IsRegisterValidForExecution(int* reg, int* val, int uniqueIdentifierForCurr
     } else {
         // If the valid bit is not true then we can check the ROB for any valid values - this is the newer version of the RAW table
         // If an entry is found such that the instruction has been completed then it will return true (as it is valid) and then also update the value for the instruction
-        cout << "WE ARE TRYING TO GET THE FORWARDED VALUES for register " << *reg << endl;
-        return ReorderBuffer->CheckROBForForwardedValues(&reg, &val, uniqueIdentifierForCurrentInst);
+        //cout << "WE ARE TRYING TO GET THE FORWARDED VALUES for register " << *reg << endl;
+        return ReorderBuffer->CheckROBForForwardedValues(reg, val, uniqueIdentifierForCurrentInst);
     }
 }
 
@@ -407,7 +410,7 @@ DecodedInstruction RegisterRenameValidityCheck(DecodedInstruction inst){
 void ForwardResultsToRVs(){
     for (int i = 0; i < ALU_RV.size(); i++) {
 
-        cout << "Instruction: "; ALU_RV.at(i).first.printHuman(); cout << " in ALU. Decoded as "; ALU_RV.at(i).first.print();
+        //cout << "Instruction: "; ALU_RV.at(i).first.printHuman(); cout << " in ALU. Decoded as "; ALU_RV.at(i).first.print();
 
         CheckBothRegistersAreValidForFurtherExecution(&ALU_RV.at(i).first);
 
@@ -419,7 +422,7 @@ void ForwardResultsToRVs(){
         ALU_RV.at(i).second++;      // Increases the "age" of the instruction being in the RV        
 
 
-        cout << "Decode after: "; ALU_RV.at(i).first.print();
+       // cout << "Decode after: "; ALU_RV.at(i).first.print();
     }
 
     for (int i = 0; i < BU_RV.size(); i++)   {
@@ -692,6 +695,15 @@ void flushPipeline(int thisSideOfBranch){
     while (ReorderBuffer->ReorderBuffer.back().first.sideOfBranch != thisSideOfBranch){
         // REMOVE entry from ROB
         cout << "Removing: "; ReorderBuffer->ReorderBuffer.back().first.printHuman(); cout << " from the ROB on a flush." << endl;
+        
+        // Reload/revert the mapping in the ARF_To_PRF and return the taken registers as valid
+        DecodedInstruction currentInst = ReorderBuffer->ReorderBuffer.back().first;
+
+        if (currentInst.IsWriteBack){
+            PhysRegisterFile.at(currentInst.rd).second = true;
+            ARF_To_PRF[currentInst.Ard] = currentInst.previousPhysDest;
+        }
+        
         ReorderBuffer->ReorderBuffer.pop_back();
     }
 }
@@ -704,9 +716,14 @@ void flushPipeline(int thisSideOfBranch){
 // Commit memory instructions
 void CommitMemoryOperation(DecodedInstruction* inst){
 
+
     switch(inst->OpCode){
         case LD:
-            inst->OUT = dataMemory.at( inst->OUT);
+
+            //bool RegFoundInROB = ReorderBuffer->IsRegInROB(&inst->rs0, &inst->IN0, inst->uniqueInstructionIdentifer);
+
+            //if (RegFoundInROB)
+            inst->OUT = dataMemory.at(inst->OUT);
             PhysRegisterFile.at(inst->DEST).first = inst->OUT;
 
             PhysRegisterFile.at(inst->DEST).second = true;
@@ -868,7 +885,7 @@ void cycle(){
 
     cout << "\n\n" << endl;
     if (PRINT_REGISTERS_FLAG) printPhysRegisterFile();//printArchRegisterFile(64);
-    if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
+    if (PRINT_MEMORY_FLAG) outputAllMemory(11);//amount_of_instruction_memory_to_output);
 
     std::cout << "---------- Cycle " << numOfCycles << " completed. ----------\n"<< std::endl;
     numOfCycles++;
@@ -914,8 +931,10 @@ void fetch(){
         
         // Load the memory address that is in the instruction memory address that is pointed to by the PC
         IF_ID[i].instruction = instrMemory.at(PC);
+        IF_ID[i].uniqueInstructionIdentifer = currentUniqueInstructionIdentifier;
 
         PC++;
+        currentUniqueInstructionIdentifier++;
 
         // Debugging/GUI to show the current instr in the processor
         IF_inst[i] = IF_ID[i].instruction;
@@ -948,7 +967,7 @@ void decode(){
 
             IF_ID[i].state = BLOCK;
             // Debugging/gui
-            ID_gui[i] = DecodedInstruction();
+            // ID_gui[i] = DecodedInstruction();
             continue;
         }
 
@@ -966,8 +985,8 @@ void decode(){
         DecodedInstruction parsedInst;
         parsedInst.state = CURRENT;
     
-        parsedInst.uniqueInstructionIdentifer = currentUniqueInstructionIdentifier;     // Give the current instruction an identifier
-        currentUniqueInstructionIdentifier++;                                           // Update currentUniqueInstructionIdentifier for the next instruciton that enters IDI in the pipeline
+        parsedInst.uniqueInstructionIdentifer = IF_ID[i].uniqueInstructionIdentifer;     // Give the current instruction an identifier
+        //currentUniqueInstructionIdentifier++;                                           // Update currentUniqueInstructionIdentifier for the next instruciton that enters IDI in the pipeline
         
         std::vector<std::string> splitCIR = split(IF_ID[i].instruction, ' '); // split the instruction based on ' ' and decode instruction like that
         
@@ -986,7 +1005,8 @@ void decode(){
         if (splitCIR.size() > 1) {
             // Get set first/destination register
             if (splitCIR.at(1).substr(0 ,1).compare("r")  == 0 ) {
-                parsedInst.rd = strToRegister(splitCIR.at(1)); 
+                parsedInst.rd = strToRegister(splitCIR.at(1));
+                parsedInst.Ard = parsedInst.rd; 
             }
 
             // Setting RS0
@@ -1086,6 +1106,9 @@ void decode(){
                         continue;
                         
                     } else {
+                        // Give the old PRF to the ROB/this instruction
+                        parsedInst.previousPhysDest = ARF_To_PRF[parsedInst.rd];
+
                         // Create entry in ARF_To_PRF
                         ARF_To_PRF[parsedInst.rd] = Prd;
 
@@ -1136,7 +1159,7 @@ void decode(){
         // Load instruction into ROB if it isn't full
         bool IsParsedInstLoadedIntoROB = ReorderBuffer->LoadInstructionIntoTheROB(parsedInst);
         
-        parsedInst = ReorderBuffer->BlockInstructionIfNotIsWriteBack(parsedInst);
+        //parsedInst = ReorderBuffer->BlockInstructionIfNotIsWriteBack(parsedInst);
 
         //cout << "After ROB loading, parsedInst is ::" << parsedInst.state << endl;
 
@@ -1148,8 +1171,14 @@ void decode(){
 
 // issue stage
 void issue(){
-    for (int i = 0; i < ID_I.size(); i++){
+    int i = 0;
 
+    if (!IsIssuingLeftToRight){
+        i = ID_I.size();
+    }
+    
+    //for (int i = 0; i < ID_I.size(); i++){
+    while (i < ID_I.size() && i >= 0){
         // Debugging and gui
         I_gui[i] = DecodedInstruction();
 
@@ -1185,15 +1214,20 @@ void issue(){
 
         }
 
-
+        // Increment/decrement the timer depending on the direction of issuing
+        if (!IsIssuingLeftToRight){
+            i--;
+        } else {
+            i++;
+        }
     }
     // Any forwarded results are given to the instructions that are in the RVs
     ForwardResultsToRVs();
     // Offloads an instruciton from one RV into their respective EU
     OffLoadingReservationStations();
 
-    // Now we can remove any writtenback entries in the RAW_Table
-    //HazardDetectionUnit->ClearRAW_Table();
+    // Update issuing direction
+    //IsIssuingLeftToRight = !IsIssuingLeftToRight;
 }
 
 // Executes the current instruction
@@ -1303,12 +1337,12 @@ void commit(){
 void writeBack(){
     
     // Need to handle the correct writeback order so that WAWs dont occur
-    cout << "Bill big nut" << endl;
+    //cout << "Bill big nut" << endl;
     WB_gui = vector<DecodedInstruction>();
 
     // Cycle though the ROB and if the instructions at the front are complete then we commit/retire them
     for (int i= 0; i < ReorderBuffer->ReorderBuffer.size(); i++){ //} (!ReorderBuffer->ReorderBuffer.empty()){
-        std::cout << "I doubt this runs" << endl;
+        //std::cout << "I doubt this runs" << endl;
         std::pair<DecodedInstruction, Optional<int>> entry = ReorderBuffer->ReorderBuffer.at(i);
 
         //cout << "PRE WB check with current instruction: "; entry.first.printHuman(); cout << endl;
@@ -1322,7 +1356,7 @@ void writeBack(){
 
         if (entry.first.OpCode == HALT) {
             systemHaltFlag = true;
-            std::cout << "this fires" << endl;
+            //std::cout << "this fires" << endl;
             break;
         }
         

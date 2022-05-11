@@ -60,6 +60,7 @@ enum InstState {EMPTY, CURRENT, NEXT, BLOCK};
 /* NonDecodedInstruction - Only used in IF*/
 struct NonDecodedInstruction {
     InstState state = EMPTY;
+    int uniqueInstructionIdentifer; // Uniquely identifies an instruction in the pipeline so that it can be compared to other instructions later on - NOTE: an integer overflow on this is OK
 
     std::string instruction = "";
 
@@ -120,9 +121,13 @@ struct DecodedInstruction {
     Instruction OpCode;         // OP code of the instruction
 
     int sideOfBranch = 0;
+
+    int previousPhysDest = -1;
     
     std::vector<std::string> SplitInst;
     
+    int Ard = -1;   // Im stupid so I have to now implement an architecture destination register attribute to this struct as I cannot be asked to re write my code in a way that I have to use rd for just arch registers again
+
     int rd = -1;    // Actual register used in instruction for destination       - Used to fight RAW hazards
     int rs0 = -1;   // Actual register used in instruction for source register 0 - Used to fight RAW hazards
     int rs1 = -1;   // Actual register used in instruction for source register 1 - Used to fight RAW hazards
