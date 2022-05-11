@@ -179,6 +179,7 @@ struct DecodedInstruction {
 
 /* Constants */
 const int SIZE_OF_REGISTER_FILE = 16;           // Number of architectural register
+const int PHYSICAL_REGISTER_FILE_SCALER = 4;
 const int SIZE_OF_INSTRUCTION_MEMORY = 256;     // size of the read-only instruction memory
 const int SIZE_OF_DATA_MEMORY = 256;            // pretty much the heap and all
 

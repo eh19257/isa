@@ -32,7 +32,7 @@ int amount_of_instruction_memory_to_output = 8;  // default = 8
 
 /* Register Files */
 std::array<int, SIZE_OF_REGISTER_FILE> ArchRegisterFile;        // Architecural register file for 16 general purpose registers
-std::array<std::pair<int, bool>, SIZE_OF_REGISTER_FILE * 4> PhysRegisterFile;   // Physcial regsiter file for n*16 general purpose registers
+std::array<std::pair<int, bool>, SIZE_OF_REGISTER_FILE * PHYSICAL_REGISTER_FILE_SCALER> PhysRegisterFile;   // Physcial regsiter file for n*16 general purpose registers
 std::map<int, int> ARF_To_PRF;                             // Map between ARF regstiers and PRF registers
 //std::array<float, 4> floatingPointRegisterFile;
 
@@ -125,6 +125,7 @@ void writeBack();
 void flushPipeline();
 bool AllEUsAndRVsEmpty();
 void initialisePRF();
+void initialiseIndexesOfLastRegisterUsedInPRF();
 
 /* DecodedIssue helpers */
 void ForwardResultsToRVs();
@@ -132,7 +133,7 @@ void OffLoadingReservationStations();
 void issueIntoRV(DecodedInstruction inst, NonDecodedInstruction* addyOfInReg, std::deque<std::pair<DecodedInstruction, int>>* RV);
 
 bool CheckIfWriteOnly(DecodedInstruction inst);
-int GetUnusedRegisterInPRF();
+int GetUnusedRegisterInPRF(int archDest);
 bool IsRegisterValidForExecution(int* reg, int* val, int uniqueIdentifierForCurrentInst);
 DecodedInstruction RegisterRenameValidityCheck(DecodedInstruction inst);
 void CheckBothRegistersAreValidForFurtherExecution(DecodedInstruction* inst);
@@ -176,7 +177,7 @@ int numOfStalls = 0;        // Counts the number of times the pipeline stalls
 int numOfBubbles = 0;
 
 /* Tracking Variables */
-int IndexOfLastRegisterUsedInPRF = -1;
+array<int, SIZE_OF_REGISTER_FILE> IndexesOfLastRegisterUsedInPRF = array<int, SIZE_OF_REGISTER_FILE>();
 int currentSideOfBranch = 0;            // A global variable that keeps track of which side of the branch the instruction is on
 //const //int maxNumberOfBranchSides = 2;         // In the case of a branch taken, then we need to flush out all of the incorrect instructions in the pipeline
                                         // We can keep track of which side of the branch we are in by using this currentSideOfBranch variable. On intialisation, we give each of
@@ -237,7 +238,7 @@ void printPhysRegisterFile(){
     std::cout << "PC: " << PC - 1 << "\tbranching? " << BUs.at(0)->branchFlag << "\tHalting? " << systemHaltFlag << "\n" << endl;
     for (int i = 0; i < (int) SIZE_OF_REGISTER_FILE/2; i++){
         for (int j = 0; j < 8; j++){
-            std::cout << "PR" << (i)*8 + j << ": " << PhysRegisterFile.at(i*8 + j).first << "\t[" << PhysRegisterFile.at(i*8 + j).second << "]\t\t";
+            std::cout << "PR" << (i)*8 + j << ": " << PhysRegisterFile.at(i*8 + j).first << " [" << PhysRegisterFile.at(i*8 + j).second << "]\t";
         }
         cout << endl;
     }
@@ -269,6 +270,12 @@ void initialisePRF(){
     }
 }
 
+void initialiseIndexesOfLastRegisterUsedInPRF(){
+    for (int i = 0; i < IndexesOfLastRegisterUsedInPRF.size(); i++){
+        IndexesOfLastRegisterUsedInPRF.at(i) = -1;
+    }
+}
+
 // Removes reg from PRF/creates a new space for one
 void RemoveFromPRF(DecodedInstruction inst){
     if (inst.IsWriteBack && inst.rd != -1){
@@ -284,7 +291,34 @@ bool CheckIfWriteOnly(DecodedInstruction inst){
 }
 
 // Gets the index of an unused regsiter in the physicla register file
-int GetUnusedRegisterInPRF(){
+int GetUnusedRegisterInPRF(int archDest){
+    cout << "GetUnusedRegisterInPRF() is being called" << endl;
+    int offsetPos = archDest * PHYSICAL_REGISTER_FILE_SCALER; 
+
+    int firstRegAttempt = IndexesOfLastRegisterUsedInPRF.at(archDest);
+    while (firstRegAttempt < ((int) PHYSICAL_REGISTER_FILE_SCALER - 1)){
+        firstRegAttempt++;
+        
+        if (PhysRegisterFile.at(offsetPos + firstRegAttempt).second) {
+            IndexesOfLastRegisterUsedInPRF.at(archDest) = firstRegAttempt;
+            return offsetPos + firstRegAttempt;
+        }
+    }
+    // Check the lower half of the range
+    int secondRegAttempt = -1;
+    while (secondRegAttempt < (int) IndexesOfLastRegisterUsedInPRF.at(archDest)){
+        secondRegAttempt++;
+        if (PhysRegisterFile.at(offsetPos + secondRegAttempt).second){
+            IndexesOfLastRegisterUsedInPRF.at(archDest) = secondRegAttempt;
+            return offsetPos + secondRegAttempt;
+        }
+    }
+    IndexesOfLastRegisterUsedInPRF.at(archDest) = -1;
+    return -1;
+
+
+
+    /*
     int foo = IndexOfLastRegisterUsedInPRF;
 
     // iterate through the x - n registers in the PRF
@@ -313,8 +347,10 @@ int GetUnusedRegisterInPRF(){
     // if there aren't any registers avaliable (i.e. they are all in use which is very unlikely), then return -1
     IndexOfLastRegisterUsedInPRF = -1;
     return IndexOfLastRegisterUsedInPRF;
+    */
 }
 
+/*
 // Require so that the PRF doesnt get filled with falsely invalid registers on an instruction BLOCK
 void UndoDestinationRegisterValidity(DecodedInstruction* inst){
     if (inst->IsWriteBack && inst->rd != -1){
@@ -322,7 +358,7 @@ void UndoDestinationRegisterValidity(DecodedInstruction* inst){
 
         IndexOfLastRegisterUsedInPRF = IndexOfLastRegisterUsedInPRF - 1;
     }
-}
+}*/
 
 // Returns true if this reg is valid for execution/use
 bool IsRegisterValidForExecution(int* reg, int* val, int uniqueIdentifierForCurrentInst){
@@ -961,6 +997,8 @@ void fetch(){
 
 // Combined Instruction Decode with Issue
 void decode(){
+    std::cout << "fuck me" << std::endl;
+
     // Cycle through every channel
     for (int i = 0; i < ID_I.size(); i++){
         if (ID_I[i].state == CURRENT || ID_I[i].state == BLOCK || ID_I[i].state == NEXT){
@@ -1089,13 +1127,15 @@ void decode(){
         // Rename and get the values for the new instruction
         parsedInst = RegisterRenameValidityCheck(parsedInst);
 
+        cout << "asdf about to rename" << endl;
+
         // Here we apply register renaming FOR THE DESTINATIONS REGISTER
         if (parsedInst.rd != -1){
             if (parsedInst.IsWriteBack){
                 //if (parsedInst.rd != parsedInst.rs0 && parsedInst.rd != parsedInst.rs1){
-                    int Prd = GetUnusedRegisterInPRF();
+                    int Prd = GetUnusedRegisterInPRF(parsedInst.rd);
 
-                    //cout << "Prd: " << Prd << endl;
+                    cout << "Prd for rd: " << Prd << endl;// HERE IS A PROBLEM
 
                     // If there are no usable registers in the PRF then we cannot continue and so the IF/IDI register must block
                     if (Prd == -1){
@@ -1292,8 +1332,6 @@ void execute(){
         else l->currentInst = DecodedInstruction();
     } 
 }
-
-
 
 template<class T, std::size_t SIZE>
 void runThroughEUAndAddToROB(std::array<T*, SIZE> EUs){
@@ -1504,12 +1542,15 @@ void LoadDataIntoMemory(std::string path){
 
 
 int main(int argc, char** argv){
+    std::setvbuf(stdout, NULL, _IONBF, 0);
+
     if (!handleProgramFlags(argc, argv)) {
         std::cout << "Usage: ./isa <program_name> -r|m" << std::endl;
         return 0;
     }
 
     initialisePRF();
+    initialiseIndexesOfLastRegisterUsedInPRF();
     loadProgramIntoMemory(argv[1]);
     run();
 
