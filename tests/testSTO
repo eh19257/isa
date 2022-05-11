@@ -1,0 +1,4 @@
+LDI r0 1
+LDI r1 56
+STO r0 r1
+HALT

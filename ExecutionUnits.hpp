@@ -91,7 +91,7 @@ class ROB {
 
                 // If the instruction matches
                 if (entry.first.uniqueInstructionIdentifer == inst.uniqueInstructionIdentifer){
-
+                    std::cout << "FOUND IN ROB: "; inst.printHuman(); std::cout << std::endl;
                     ReorderBuffer.at(i).first = inst;
 
                     // handle for when an instruction is writeback
@@ -109,6 +109,7 @@ class ROB {
                     return true;
                 }
             }
+            throw std::invalid_argument("Instruction: " + inst.asString + " is not found in the ROB -- THIS IS ILLEGAL");
             return false;
         }
 
@@ -161,7 +162,7 @@ class ROB {
 
         DecodedInstruction BlockInstructionIfNotIsWriteBack(DecodedInstruction inst){
             // If this is a write back instruction then we can ignore this special case and use the ROB as it was intended
-            if (!inst.IsWriteBack) {
+            /*if (!inst.IsWriteBack) {
                 // If this instrucion isn't a writeback, then we must check that no other !isWriteBack instruction is going to 
                 // -1 so we dont include the current instruction
                 for (int i = 0; i < ReorderBuffer.size() - 1 && ReorderBuffer.at(i).first.uniqueInstructionIdentifer != inst.uniqueInstructionIdentifer; i++){
@@ -170,15 +171,23 @@ class ROB {
                         break;
                     }
                 }
-            }
+            }*/
             return inst;
         }
 
-        void RemoveLastAddedToROB(DecodedInstruction inst){
-            if (ReorderBuffer.back().first.uniqueInstructionIdentifer != inst.uniqueInstructionIdentifer){
-                std::cout << "Trying to remove the last instruction but it isn't the one we want to - THIS IS AN ILLEGAL STATE" << std::endl;
+        // Cleans the ROB of any correctly completed instructions
+        void CleanROB(){
+            std::pair<DecodedInstruction, Optional<int>> top = ReorderBuffer.front();
+
+            while (ReorderBuffer.front().first.state == NEXT || (ReorderBuffer.front().first.state == CURRENT && ReorderBuffer.front().first.IsMemoryOperation)){
+                
+                if (ReorderBuffer.front().first.IsMemoryOperation && ReorderBuffer.front().first.state == CURRENT) {
+                    ReorderBuffer.at(0).first.state = NEXT;
+                    break;
+                } else {
+                    ReorderBuffer.pop_front();
+                }
             }
-            ReorderBuffer.pop_back();
         }
 
         bool IsInstInROB(DecodedInstruction inst){

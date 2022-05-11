@@ -591,19 +591,34 @@ bool AllEUsAndRVsEmpty(){
 
 // Flush reservation station if the instruction is on the incorrent sideOfTheBranch
 void flushRV(std::deque<std::pair<DecodedInstruction, int>>* RV, int thisSideOfBranch){
+    std::vector<int> ListOfInstToRemove = std::vector<int>();
+    
     for (int i = 0; i < RV->size(); i++){
         if (RV->at(i).first.sideOfBranch != thisSideOfBranch){
             // If instruction is writing back to a specific register then we need to remove it from the raw table and also remove the validity flag on the PRF
             //HazardDetectionUnit->RemoveFromRAWTable(RV->at(i).first);
             RemoveFromPRF(RV->at(i).first);
 
-            RV->erase(RV->begin() + i);
+            ListOfInstToRemove.push_back(RV->at(i).first.uniqueInstructionIdentifer);
+        }
+    }
+
+    // The correct way to remove all elements in the RV that need to be removed
+    for (int i = 0; i < ListOfInstToRemove.size(); i++){
+        for(int j = 0; j < RV->size(); j++){
+            if (ListOfInstToRemove.at(i) == RV->at(j).first.uniqueInstructionIdentifer){
+                RV->erase(RV->begin() + j);
+                break;
+            }
         }
     }
 }
 
 // Flushes the whole pipline
 void flushPipeline(int thisSideOfBranch){
+    cout << "Flushing the pipeline" << endl;
+
+
     for (int i = 0; i < IF_ID.size(); i++){
         IF_ID[i].state = EMPTY;
     }
@@ -625,22 +640,34 @@ void flushPipeline(int thisSideOfBranch){
     // Flush the ALUs (if need)
     for (int i = 0; i < NUMBER_OF_ALU; i++){
         if (ALUs.at(i)->In.sideOfBranch != thisSideOfBranch){
-            ALUs.at(i)->In.state = EMPTY;
+            ALUs.at(i)->In = DecodedInstruction();
             ALUs.at(i)->currentInst = DecodedInstruction();
+        }
+
+        if (ALUs.at(i)->Out.sideOfBranch != thisSideOfBranch){
+            ALUs.at(i)->Out = DecodedInstruction();
         }
     }
     // Flush the BUs (if needed)
     for (int i = 0; i < NUMBER_OF_BU; i++){
         if (BUs.at(i)->In.sideOfBranch != thisSideOfBranch){
-            BUs.at(i)->In.state = EMPTY;
+            BUs.at(i)->In = DecodedInstruction();
             BUs.at(i)->currentInst = DecodedInstruction();
+        }
+
+        if (BUs.at(i)->Out.sideOfBranch != thisSideOfBranch){
+            BUs.at(i)->Out = DecodedInstruction();
         }
     }
     // Flush the LSUs (if needed)
     for (int i = 0; i < NUMBER_OF_LSU; i++){
         if (LSUs.at(i)->In.sideOfBranch != thisSideOfBranch){
-            LSUs.at(i)->In.state = EMPTY;
+            LSUs.at(i)->In = DecodedInstruction();
             LSUs.at(i)->currentInst = DecodedInstruction();
+        }
+
+        if (LSUs.at(i)->Out.sideOfBranch != thisSideOfBranch){
+            LSUs.at(i)->Out = DecodedInstruction();
         }
     }
 
@@ -653,6 +680,7 @@ void flushPipeline(int thisSideOfBranch){
     // Clean the ROB
     while (ReorderBuffer->ReorderBuffer.back().first.sideOfBranch != thisSideOfBranch){
         // REMOVE entry from ROB
+        cout << "Removing: "; ReorderBuffer->ReorderBuffer.back().first.printHuman(); cout << " from the ROB on a flush." << endl;
         ReorderBuffer->ReorderBuffer.pop_back();
     }
 }
@@ -662,26 +690,48 @@ void flushPipeline(int thisSideOfBranch){
 
 #pragma region Commit Helpers
 
+// Commit memory instructions
 void CommitMemoryOperation(DecodedInstruction* inst){
 
-    if (inst->OpCode >= LD && inst->OpCode <= LDA && inst->OpCode != LDI){
-        inst->OUT = dataMemory.at(inst->OUT);
+    switch(inst->OpCode){
+        case LD:
+            inst->OUT = dataMemory.at( inst->OUT);
+            PhysRegisterFile.at(inst->DEST).first = inst->OUT;
+
+            PhysRegisterFile.at(inst->DEST).second = true;
+            break;
         
-        PhysRegisterFile.at(inst->DEST).first = inst->OUT;
-        PhysRegisterFile.at(inst->DEST).second = true;
-        cout << "Memory Inst "; inst->printHuman(); cout << " is LOADED into PRF. Decoded inst: "; inst->print();
+        case LDA:
+            inst->OUT = dataMemory.at(inst->OUT);
+            PhysRegisterFile.at(inst->DEST).first = inst->OUT;
+
+            PhysRegisterFile.at(inst->DEST).second = true;
+            break;
+        case LDI:
+            inst->OUT = dataMemory.at(inst->OUT);
+            PhysRegisterFile.at(inst->DEST).first = inst->OUT;
+
+            PhysRegisterFile.at(inst->DEST).second = true;
+            break;
+        
+        case STOI:
+            dataMemory.at(inst->IMM) = PhysRegisterFile.at(inst->rs0).first;
+            break;
+
+        case STO:
+            dataMemory.at(PhysRegisterFile.at(inst->rd).first) = PhysRegisterFile.at(inst->rs0).first;
+            break;
+
+        case STOA:
+            dataMemory.at(PhysRegisterFile.at(inst->rd).first + PhysRegisterFile.at(inst->rs0).first) = PhysRegisterFile.at(inst->rs1).first;
+            break;
+
+        default:
+            throw std::invalid_argument("Not a memory access instruction");
+
+            break;
     }
-    else if (inst->OpCode >= STO && inst->OpCode <= STOA) {
-        cout << "Memory Inst "; inst->printHuman(); cout << " is STORED in memory. Decoded inst: "; inst->print();
-
-        dataMemory.at(inst->DEST) = inst->OUT;
-
-    } else {
-        throw std::invalid_argument("Not a memory access instruction");
-    }
-
-    // Then set the register in the PRF back to valid
-    //PhysRegisterFile.at(inst.DEST).second = true;
+    // DONE SO THAT THE ROB IS UPDATED
 }
 
 #pragma endregion Commit Helpers
@@ -768,7 +818,7 @@ void cycle(){
     }
 
     cout << "\n\n" << endl;
-    if (PRINT_REGISTERS_FLAG) printArchRegisterFile(25);
+    if (PRINT_REGISTERS_FLAG) printArchRegisterFile(10);
     if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
 
     std::cout << "---------- Cycle " << numOfCycles << " completed. ----------\n"<< std::endl;
@@ -976,7 +1026,7 @@ void decode(){
                 //if (parsedInst.rd != parsedInst.rs0 && parsedInst.rd != parsedInst.rs1){
                     int Prd = GetUnusedRegisterInPRF();
 
-                    cout << "Prd: " << Prd << endl;
+                    //cout << "Prd: " << Prd << endl;
 
                     // If there are no usable registers in the PRF then we cannot continue and so the IF/IDI register must block
                     if (Prd == -1){
@@ -1053,6 +1103,11 @@ void issue(){
 
         // Debugging and gui
         I_gui[i] = DecodedInstruction();
+
+        if (ID_I[i].state == EMPTY || ID_I[i].state == CURRENT){
+            break;
+        }
+        
 
         bool IsInstInROB = ReorderBuffer->IsInstInROB(ID_I[i]);
 
@@ -1199,24 +1254,26 @@ void commit(){
 void writeBack(){
     
     // Need to handle the correct writeback order so that WAWs dont occur
-
+    cout << "Bill big nut" << endl;
     WB_gui = vector<DecodedInstruction>();
 
     // Cycle though the ROB and if the instructions at the front are complete then we commit/retire them
     for (int i= 0; i < ReorderBuffer->ReorderBuffer.size(); i++){ //} (!ReorderBuffer->ReorderBuffer.empty()){
-
+        std::cout << "I doubt this runs" << endl;
         std::pair<DecodedInstruction, Optional<int>> entry = ReorderBuffer->ReorderBuffer.at(i);
 
+        //cout << "PRE WB check with current instruction: "; entry.first.printHuman(); cout << endl;
         if ((entry.first.state == CURRENT && !entry.first.IsMemoryOperation) || (entry.first.state == BLOCK && entry.first.IsMemoryOperation)) {
             break;
         }
 
-        cout << "loop" << endl;
+        //cout << "looping in WB with current instruction: "; entry.first.printHuman(); cout << endl;
         // Debugging/GUI
         WB_gui.push_back(entry.first);
 
         if (entry.first.OpCode == HALT) {
             systemHaltFlag = true;
+            std::cout << "this fires" << endl;
             break;
         }
         
@@ -1232,20 +1289,26 @@ void writeBack(){
             }
 
             // Tell the ROB that the instruction is complete
-            ReorderBuffer->ReorderBuffer.at(i).first.state = NEXT;
+            //ReorderBuffer->ReorderBuffer.at(i).first.state = NEXT;
         } else {
 
             if (entry.second.HasValue() && entry.first.IsWriteBack){
 
-                cout << "WRITEBACK of: "; entry.first.printHuman(); cout << "decoded as: "; entry.first.print(); cout << endl;
+                //cout << "WRITEBACK of: "; entry.first.printHuman(); cout << "decoded as: "; entry.first.print(); cout << endl;
                 
                 PhysRegisterFile.at(entry.first.DEST).first = entry.first.OUT;
                 PhysRegisterFile.at(entry.first.DEST).second = true;
             }
-            ReorderBuffer->ReorderBuffer.pop_front();
+            //std::cout << "About to POP:"; entry.first.printHuman(); cout << " from the ROB" << endl;
+            //ReorderBuffer->ReorderBuffer.erase(ReorderBuffer->ReorderBuffer.begin() + i);
         }
         
     }
+    // This check is needed so we dont access invalid memory
+    if (!systemHaltFlag){
+        // CLEAN UP THE ROB
+        ReorderBuffer->CleanROB();
+    }    
 }
 
 #pragma endregion F/D/E/M/W/
