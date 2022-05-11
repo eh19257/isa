@@ -160,11 +160,13 @@ struct DecodedInstruction {
                     if (this->rs1 == -1){
                         std::cout << this->IMM << " ";
                     } else {
-                        std::cout << "PR" << this->rs1 << " ";
+                        std::cout << "PR" << this->rs1;
                     }
                 }
             }
         }
+        std::cout << " :" << this->state << ":";
+
     }
 
 };
@@ -183,4 +185,4 @@ const int NUMBER_OF_ALU = 2;
 const int NUMBER_OF_BU = 1;
 const int NUMBER_OF_LSU = 1;
 
-const int SUPERSCALAR_WIDTH = 2;
+const int SUPERSCALAR_WIDTH = 1;

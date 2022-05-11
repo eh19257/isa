@@ -231,6 +231,17 @@ void printArchRegisterFile(int maxReg){
     std::cout << "writeBackFlag: " << writeBackFlag << std::endl;
 }
 
+void printPhysRegisterFile(){
+    for (int i = 0; i < (int) SIZE_OF_REGISTER_FILE/2; i++){
+        for (int j = 0; j < 8; j++){
+            std::cout << "PR" << (i)*8 + j << ": " << PhysRegisterFile.at(i*8 + j).first << "\t[" << PhysRegisterFile.at(i*8 + j).second << "]\t\t";
+        }
+        cout << endl;
+    }
+    cout << endl;
+
+}
+
 // Outputs all stats here
 void outputStatistics(int numOfCycles){
     if (!PRINT_STATS_FLAG) return;
@@ -761,20 +772,56 @@ void cycle(){
     for (string i : IF_inst){
         cout << i << "   ||   ";
     } cout << endl;
+
     cout << "Current instruction(s) in the ID: ";
     for (DecodedInstruction d : ID_gui){
-        d.printHuman();
+        if (d.state != EMPTY){
+            d.printHuman();
+        } else {
+            cout << "\t";
+        }      
         cout << "   ||   ";
     } cout << endl;
+
     cout << "Current instruction(s) in the I: ";
     for (DecodedInstruction i : I_gui){
-        i.printHuman();
+        if (i.state != EMPTY){
+            i.printHuman();
+        } else {
+            cout << "\t";
+        }  
         cout << "   ||   ";
     } cout << endl;
 
 
-    //cout << "Current instruction in the I:  " << I_inst << endl;
-    cout << "Current instruction(s) in ALU0: "; ALUs.at(0)->currentInst.printHuman(); std::cout << "\tALU1: "; ALUs.at(1)->currentInst.printHuman(); std::cout << "\tBU: "; BUs.at(0)->currentInst.printHuman(); std::cout << "\tLSU: "; LSUs.at(0)->currentInst.printHuman(); std::cout << std::endl;
+    // EUs
+    cout << "Current instruction(s) in ";
+
+    for (int i = 0; i < ALUs.size(); i++){
+        cout << "\tALU" << i << ": "; 
+        if (ALUs.at(i)->currentInst.state != EMPTY){
+            ALUs.at(i)->currentInst.printHuman();
+        } else {
+            cout << "\t";
+        }
+    }
+    for (int i = 0; i < BUs.size(); i++){
+        cout << "\tBU" << i << ": ";
+        if (BUs.at(i)->currentInst.state != EMPTY){
+            BUs.at(i)->currentInst.printHuman();
+        } else {
+            cout << "\t";
+        }
+    }
+    for (int i = 0; i < LSUs.size(); i++){
+        cout << "\tLSU" << i << ": ";
+        if (LSUs.at(i)->currentInst.state != EMPTY){
+            LSUs.at(i)->currentInst.printHuman();
+        } else {
+            cout << "\t";
+        }
+    }
+    std::cout << std::endl;
     
     cout << "Current instuction(s) in C: ";
     for (DecodedInstruction c : C_gui){
@@ -792,18 +839,19 @@ void cycle(){
     for (int i = 0; i < MAX_RV_SIZE; i++){
         cout << i << "\t";
         if (ALU_RV.size() <= i) cout << "\t\t";
-        else { ALU_RV.at(i).first.printHuman(); cout << " ::" << ALU_RV.at(i).first.state << "\t"; }
+        else { ALU_RV.at(i).first.printHuman(); cout << "\t"; }
 
         if (BU_RV.size() <= i) cout << "\t\t";
-        else { BU_RV.at(i).first.printHuman(); cout << " ::" << BU_RV.at(i).first.state << "\t"; }
+        else { BU_RV.at(i).first.printHuman(); cout << "\t"; }
     
         if (LSU_RV.size() <= i) cout << "\t\t";
-        else { LSU_RV.at(i).first.printHuman(); cout << " ::" << LSU_RV.at(i).first.state << "\t"; }
+        else { LSU_RV.at(i).first.printHuman(); cout << "\t"; }
         
         cout << endl;
     }
     cout << "\n" << endl;
     cout << "========== Re-order buffer ==========" << endl;
+    cout << "Entry\trd\tValue\tInstruction" << endl;
     for (int i = 0; i < ReorderBuffer->ReorderBuffer.size(); i++){
         cout << i << "\t" << ReorderBuffer->ReorderBuffer.at(i).first.rd << "\t";
 
@@ -814,11 +862,12 @@ void cycle(){
         }
         cout << "\t";
         ReorderBuffer->ReorderBuffer.at(i).first.printHuman();
-        cout << "\t" << ReorderBuffer->ReorderBuffer.at(i).first.state << endl;
+        cout << endl;
     }
+    cout << "=====================================" << endl;
 
     cout << "\n\n" << endl;
-    if (PRINT_REGISTERS_FLAG) printArchRegisterFile(10);
+    if (PRINT_REGISTERS_FLAG) printPhysRegisterFile();//printArchRegisterFile(64);
     if (PRINT_MEMORY_FLAG) outputAllMemory(amount_of_instruction_memory_to_output);
 
     std::cout << "---------- Cycle " << numOfCycles << " completed. ----------\n"<< std::endl;
