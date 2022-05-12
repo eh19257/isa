@@ -196,17 +196,65 @@ class ROB {
 
         // Cleans the ROB of any correctly completed instructions
         void CleanROB(){
-            std::pair<DecodedInstruction, Optional<int>> top = ReorderBuffer.front();
+            //std::pair<DecodedInstruction, Optional<int>> top = ReorderBuffer.front();
+            // Tracks mostly the top but also allows for stepping over Memory Operations that need to chill in memory because they need to be read from
+            int topPointer = 0;
+            
+            while (topPointer < ReorderBuffer.size()){
+                std::cout << "topPointer: " << topPointer << std::endl;
+                std::pair<DecodedInstruction, Optional<int>> top = ReorderBuffer.at(topPointer);
 
-            while (ReorderBuffer.front().first.state == NEXT || (ReorderBuffer.front().first.state == CURRENT && ReorderBuffer.front().first.IsMemoryOperation)){
-                
-                if (ReorderBuffer.front().first.IsMemoryOperation && ReorderBuffer.front().first.state == CURRENT) {
-                    ReorderBuffer.at(0).first.state = NEXT;
-                    break;
+                if (top.first.IsMemoryOperation){
+                    if (top.first.state == NEXT) {
+                        ReorderBuffer.erase(ReorderBuffer.begin() + topPointer);
+                    } else if (top.first.state == CURRENT) {
+                        ReorderBuffer.at(topPointer).first.state = NEXT;
+                        topPointer++;
+                    } else {
+                        break;
+                    }
+ 
                 } else {
-                    ReorderBuffer.pop_front();
+                    // case where we are not dealing with a memory op
+                    if (top.first.state == NEXT){
+                        ReorderBuffer.erase(ReorderBuffer.begin() + topPointer);
+                    } else {
+                        break;
+                    }
+
                 }
             }
+
+                /*
+                if (ReorderBuffer.at(topPointer).first.state == NEXT) {
+                    std::cout << "Purging the ROB of "; ReorderBuffer.at(topPointer).first.printHuman(); std::cout << std::endl;
+                    ReorderBuffer.erase(ReorderBuffer.begin() + topPointer);
+                } 
+                else if (ReorderBuffer.at(topPointer).first.state == CURRENT){
+                    if (ReorderBuffer.at(topPointer).first.IsMemoryOperation){
+                        std::cout << "SETTING TO NEXT "; ReorderBuffer.at(topPointer).first.printHuman(); std::cout << std::endl;
+                        ReorderBuffer.at(topPointer).first.state = NEXT;
+                        topPointer++;
+                    } else {
+                        break;
+                    }
+                } else {
+                    throw std::invalid_argument("Invalid instruction: " + ReorderBuffer.at(topPointer).first.asString + " is found in the ROB -- THIS IS ILLEGAL");
+                }
+    
+            }
+
+            while (index < ReorderBuffer.size()){//ReorderBuffer.at(index).first.state == NEXT || (ReorderBuffer.at(index).first.state == CURRENT && ReorderBuffer.at(index).first.IsMemoryOperation)){
+                if (ReorderBuffer.at(index).first.IsMemoryOperation && ReorderBuffer.at(index).first.state == CURRENT) {
+                    ReorderBuffer.at(index).first.state = NEXT;
+                    index++;
+                    break;
+                } else if (ReorderBuffer.at(index).first.state == NEXT) {
+                    ReorderBuffer.erase(ReorderBuffer.begin() + index);
+                } else {
+                    break;
+                }
+            }*/
         }
 
         bool IsInstInROB(DecodedInstruction inst){

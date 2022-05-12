@@ -298,7 +298,7 @@ int GetUnusedRegisterInPRF(int archDest){
     int firstRegAttempt = IndexesOfLastRegisterUsedInPRF.at(archDest);
     while (firstRegAttempt < ((int) PHYSICAL_REGISTER_FILE_SCALER - 1)){
         firstRegAttempt++;
-        
+        cout << "first: " << firstRegAttempt << endl;
         if (PhysRegisterFile.at(offsetPos + firstRegAttempt).second) {
             IndexesOfLastRegisterUsedInPRF.at(archDest) = firstRegAttempt;
             return offsetPos + firstRegAttempt;
@@ -308,6 +308,7 @@ int GetUnusedRegisterInPRF(int archDest){
     int secondRegAttempt = -1;
     while (secondRegAttempt < (int) IndexesOfLastRegisterUsedInPRF.at(archDest)){
         secondRegAttempt++;
+        cout << "second: " << secondRegAttempt << endl;
         if (PhysRegisterFile.at(offsetPos + secondRegAttempt).second){
             IndexesOfLastRegisterUsedInPRF.at(archDest) = secondRegAttempt;
             return offsetPos + secondRegAttempt;
@@ -1401,23 +1402,27 @@ void writeBack(){
         if (entry.first.IsMemoryOperation && entry.first.state == CURRENT) {
             // Handle memory access operations
             // On a memory operation we dont kill it straight away, we wait til next time so that any instructions inthe RVs can be updated
-            cout << "Commiting memoryOperation" << endl;
+            cout << "Commiting memoryOperation "; ReorderBuffer->ReorderBuffer.at(i).first.printHuman(); cout << endl;
             CommitMemoryOperation(&ReorderBuffer->ReorderBuffer.at(i).first);
 
             // If the instrucion is a writeback memory op (i.e. and LOAD) then we need to dump the value into the ROB - this is so the ROB acts like a RAW table or common data bus
             if (entry.first.IsWriteBack){
+                cout << "value is being written back HERE for inst "; ReorderBuffer->ReorderBuffer.at(i).first.printHuman(); cout << endl;
                 ReorderBuffer->ReorderBuffer.at(i).second.Value(ReorderBuffer->ReorderBuffer.at(i).first.OUT);
             }
+            //break; THIS BREAK MIGHTVE MADE IT WORSE BUT IM GOING TO BED
 
             // Tell the ROB that the instruction is complete
             //ReorderBuffer->ReorderBuffer.at(i).first.state = NEXT;
+        } else if (entry.first.IsMemoryOperation && entry.first.state == NEXT){
+            // DO fuck all
+            cout << "PR" <<entry.first.DEST << " is actually going down the right path of execution" << endl;
         } else {
-
             if (entry.second.HasValue() && entry.first.IsWriteBack){
 
                 //cout << "WRITEBACK of: "; entry.first.printHuman(); cout << "decoded as: "; entry.first.print(); cout << endl;
-                
-                PhysRegisterFile.at(entry.first.DEST).first = entry.first.OUT;
+                cout << "PRF" << entry.first.DEST << " is going to NOW have value: " << entry.first.OUT << endl;
+                PhysRegisterFile.at(entry.first.DEST).first = entry.second.Value();//entry.first.OUT;
                 PhysRegisterFile.at(entry.first.DEST).second = true;
             }
             //std::cout << "About to POP:"; entry.first.printHuman(); cout << " from the ROB" << endl;
