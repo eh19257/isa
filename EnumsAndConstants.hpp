@@ -143,7 +143,7 @@ struct DecodedInstruction {
     }
 
     void printHuman(){
-        if (this->state == EMPTY){
+        if (this->state == EMPTY || this->asString.empty()){
             std::cout << "\t"; 
         } else {
             std::cout << SplitInst.at(0) << " ";
@@ -183,7 +183,7 @@ const int PHYSICAL_REGISTER_FILE_SCALER = 4;
 const int SIZE_OF_INSTRUCTION_MEMORY = 256;     // size of the read-only instruction memory
 const int SIZE_OF_DATA_MEMORY = 256;            // pretty much the heap and all
 
-const int MAX_RV_SIZE = 8;
+const int MAX_RV_SIZE = 4;
 const int MAX_NUMBER_OR_ROB_ENTRIES = 32;
 const int MAX_NUMBER_OF_BRANCH_SIDES = 4;
 
@@ -191,4 +191,4 @@ const int NUMBER_OF_ALU = 2;
 const int NUMBER_OF_BU = 1;
 const int NUMBER_OF_LSU = 1;
 
-const int SUPERSCALAR_WIDTH = 2;
+const int SUPERSCALAR_WIDTH = 4;

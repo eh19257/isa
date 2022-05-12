@@ -115,6 +115,24 @@ class ROB {
 
         // returns true if it was successfully loaded into the ROB, else returns false
         bool LoadInstructionIntoTheROB(DecodedInstruction inst){
+            if (inst.IsMemoryOperation){
+                inst.state = BLOCK;
+            } else {
+                inst.state = CURRENT;
+            }
+
+            // Load the instruction into the correct position in the ROB
+            for (int i = 0; i < ReorderBuffer.size(); i++){
+                if (ReorderBuffer.at(i).first.uniqueInstructionIdentifer == inst.uniqueInstructionIdentifer){
+                    ReorderBuffer.at(i).first = inst;
+                    return true;
+                }
+            }
+            throw std::invalid_argument("Unable to find the correct position in the ROB for the instruction " + inst.asString + " to be loaded into.");
+            return false;
+            
+            
+            /*
             if (ReorderBuffer.size() >= MAX_NUMBER_OR_ROB_ENTRIES) {
                 return false;
             } else {
@@ -135,6 +153,7 @@ class ROB {
                 ReorderBuffer.push_back(std::pair<DecodedInstruction, Optional<int>>(inst, Optional<int>()));
                 return true;
             }
+            */
         }
     
          // Returns false if an an entry was found in the ROB and it has not completed excution
@@ -204,6 +223,19 @@ class ROB {
                 std::cout << "topPointer: " << topPointer << std::endl;
                 std::pair<DecodedInstruction, Optional<int>> top = ReorderBuffer.at(topPointer);
 
+                // Here we only remove entries from the top of the ROB so as to stop a fractured ROB from occuring
+                if (top.first.state == NEXT && topPointer == 0){
+                    ReorderBuffer.pop_front();
+                } 
+                else if (top.first.state == CURRENT && top.first.IsMemoryOperation){
+                    ReorderBuffer.at(topPointer).first.state = NEXT;
+                    topPointer++;
+                } else {
+                    break;
+                }
+
+                /*
+
                 if (top.first.IsMemoryOperation){
                     if (top.first.state == NEXT) {
                         ReorderBuffer.erase(ReorderBuffer.begin() + topPointer);
@@ -223,39 +255,47 @@ class ROB {
                     }
 
                 }
+                */
             }
-
-                /*
-                if (ReorderBuffer.at(topPointer).first.state == NEXT) {
-                    std::cout << "Purging the ROB of "; ReorderBuffer.at(topPointer).first.printHuman(); std::cout << std::endl;
-                    ReorderBuffer.erase(ReorderBuffer.begin() + topPointer);
-                } 
-                else if (ReorderBuffer.at(topPointer).first.state == CURRENT){
-                    if (ReorderBuffer.at(topPointer).first.IsMemoryOperation){
-                        std::cout << "SETTING TO NEXT "; ReorderBuffer.at(topPointer).first.printHuman(); std::cout << std::endl;
-                        ReorderBuffer.at(topPointer).first.state = NEXT;
-                        topPointer++;
-                    } else {
-                        break;
-                    }
-                } else {
-                    throw std::invalid_argument("Invalid instruction: " + ReorderBuffer.at(topPointer).first.asString + " is found in the ROB -- THIS IS ILLEGAL");
-                }
-    
-            }
-
-            while (index < ReorderBuffer.size()){//ReorderBuffer.at(index).first.state == NEXT || (ReorderBuffer.at(index).first.state == CURRENT && ReorderBuffer.at(index).first.IsMemoryOperation)){
-                if (ReorderBuffer.at(index).first.IsMemoryOperation && ReorderBuffer.at(index).first.state == CURRENT) {
-                    ReorderBuffer.at(index).first.state = NEXT;
-                    index++;
-                    break;
-                } else if (ReorderBuffer.at(index).first.state == NEXT) {
-                    ReorderBuffer.erase(ReorderBuffer.begin() + index);
-                } else {
-                    break;
-                }
-            }*/
         }
+
+        // returns true if the ROB is full
+        bool CreateEmptyEntryInROB(int uniqueId){
+            if (ReorderBuffer.size() >= MAX_NUMBER_OR_ROB_ENTRIES) {
+                return true;
+            }
+            std::cout << "bustin" << std::endl;
+            DecodedInstruction inst = DecodedInstruction();
+            inst.uniqueInstructionIdentifer = uniqueId;
+
+            // now we can add it to the ROB in the correct spot
+            std::pair<DecodedInstruction, Optional<int>> emptyEntry = std::pair<DecodedInstruction, Optional<int>>(inst, Optional<int>());
+            if (ReorderBuffer.empty()){
+                std::cout << "ROB PUSH BACK OF EMPTY ENTRY" << std::endl;
+                ReorderBuffer.push_back(emptyEntry);
+            } else {
+                std::cout << "Oh No" << std::endl;
+                std::cout << "Front unique number is: " << ReorderBuffer.front().first.uniqueInstructionIdentifer << " and the unique number for this inst: " << emptyEntry.first.uniqueInstructionIdentifer << std::endl;
+                ReorderBuffer.insert(ReorderBuffer.begin() + (inst.uniqueInstructionIdentifer - ReorderBuffer.front().first.uniqueInstructionIdentifer), emptyEntry);
+                std::cout << "It's here with entry.uniqueID: " << ReorderBuffer.back().first.uniqueInstructionIdentifer << std::endl;
+            }
+            return false;
+        }
+
+        bool CheckInstructionsBeforeAreNotEMPTY(int uniqueInstID){
+            for (int i = 0; i < ReorderBuffer.size(); i++){
+                if (ReorderBuffer.at(i).first.uniqueInstructionIdentifer == uniqueInstID){
+                    // There are no instructions before the one that was parameterised that are fetched but not decoded
+                    return true;
+                } 
+                if (ReorderBuffer.at(i).first.state == EMPTY){
+                    // Then there are instructions that have not been fetched AND decoded in the ROB so we need to block this one before we carry on
+                    return false;
+                }
+            }
+            throw std::invalid_argument("entry for uniqueInstID is not found in the ROB - THIS IS ILLEGAL");
+        }
+
 
         bool IsInstInROB(DecodedInstruction inst){
             for (int i = 0; i < ReorderBuffer.size(); i++){

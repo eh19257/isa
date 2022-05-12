@@ -235,7 +235,7 @@ void printArchRegisterFile(int maxReg){
 }
 
 void printPhysRegisterFile(){
-    std::cout << "PC: " << PC - 1 << "\tbranching? " << BUs.at(0)->branchFlag << "\tHalting? " << systemHaltFlag << "\n" << endl;
+    std::cout << "PC: " << PC - 1 << "\tbranching? " << BUs.at(0)->branchFlag << "\tHalting? " << systemHaltFlag << "\tCurrentUniqueID:" << currentUniqueInstructionIdentifier << "\n" << endl;
     for (int i = 0; i < (int) SIZE_OF_REGISTER_FILE/2; i++){
         for (int j = 0; j < 8; j++){
             std::cout << "PR" << (i)*8 + j << ": " << PhysRegisterFile.at(i*8 + j).first << " [" << PhysRegisterFile.at(i*8 + j).second << "]\t";
@@ -386,6 +386,8 @@ void CheckBothRegistersAreValidForFurtherExecution(DecodedInstruction* inst){
     } else {
         inst->state = BLOCK;
     }
+
+    inst->printHuman(); std::cout << " is decoded as: "; inst->print(); std::cout << " and its state is " << inst->state << endl;
 
     //return inst;
 }
@@ -645,7 +647,7 @@ void flushRV(std::deque<std::pair<DecodedInstruction, int>>* RV, int thisSideOfB
     std::vector<int> ListOfInstToRemove = std::vector<int>();
     
     for (int i = 0; i < RV->size(); i++){
-        if (RV->at(i).first.sideOfBranch != thisSideOfBranch){
+        if (RV->at(i).first.sideOfBranch > thisSideOfBranch){
             // If instruction is writing back to a specific register then we need to remove it from the raw table and also remove the validity flag on the PRF
             //HazardDetectionUnit->RemoveFromRAWTable(RV->at(i).first);
             RemoveFromPRF(RV->at(i).first);
@@ -679,7 +681,7 @@ void flushPipeline(int thisSideOfBranch){
     //IDI_inst = array<string, SUPERSCALAR_WIDTH>();
 
     for (int i = 0; i < ID_I.size(); i++){
-        if (ID_I[i].sideOfBranch != thisSideOfBranch){
+        if (ID_I[i].sideOfBranch > thisSideOfBranch){
             ID_I[i] = DecodedInstruction();
         }
     }
@@ -690,34 +692,34 @@ void flushPipeline(int thisSideOfBranch){
     //int sideOfBranchToRemove = (thisSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES;
     // Flush the ALUs (if need)
     for (int i = 0; i < NUMBER_OF_ALU; i++){
-        if (ALUs.at(i)->In.sideOfBranch != thisSideOfBranch){
+        if (ALUs.at(i)->In.sideOfBranch > thisSideOfBranch){
             ALUs.at(i)->In = DecodedInstruction();
             ALUs.at(i)->currentInst = DecodedInstruction();
         }
 
-        if (ALUs.at(i)->Out.sideOfBranch != thisSideOfBranch){
+        if (ALUs.at(i)->Out.sideOfBranch > thisSideOfBranch){
             ALUs.at(i)->Out = DecodedInstruction();
         }
     }
     // Flush the BUs (if needed)
     for (int i = 0; i < NUMBER_OF_BU; i++){
-        if (BUs.at(i)->In.sideOfBranch != thisSideOfBranch){
+        if (BUs.at(i)->In.sideOfBranch > thisSideOfBranch){
             BUs.at(i)->In = DecodedInstruction();
             BUs.at(i)->currentInst = DecodedInstruction();
         }
 
-        if (BUs.at(i)->Out.sideOfBranch != thisSideOfBranch){
+        if (BUs.at(i)->Out.sideOfBranch > thisSideOfBranch){
             BUs.at(i)->Out = DecodedInstruction();
         }
     }
     // Flush the LSUs (if needed)
     for (int i = 0; i < NUMBER_OF_LSU; i++){
-        if (LSUs.at(i)->In.sideOfBranch != thisSideOfBranch){
+        if (LSUs.at(i)->In.sideOfBranch > thisSideOfBranch){
             LSUs.at(i)->In = DecodedInstruction();
             LSUs.at(i)->currentInst = DecodedInstruction();
         }
 
-        if (LSUs.at(i)->Out.sideOfBranch != thisSideOfBranch){
+        if (LSUs.at(i)->Out.sideOfBranch > thisSideOfBranch){
             LSUs.at(i)->Out = DecodedInstruction();
         }
     }
@@ -729,7 +731,7 @@ void flushPipeline(int thisSideOfBranch){
 
 
     // Clean the ROB
-    while (ReorderBuffer->ReorderBuffer.back().first.sideOfBranch != thisSideOfBranch){
+    while (ReorderBuffer->ReorderBuffer.back().first.sideOfBranch > thisSideOfBranch){
         // REMOVE entry from ROB
         cout << "Removing: "; ReorderBuffer->ReorderBuffer.back().first.printHuman(); cout << " from the ROB on a flush." << endl;
         
@@ -740,7 +742,8 @@ void flushPipeline(int thisSideOfBranch){
             PhysRegisterFile.at(currentInst.rd).second = true;
             ARF_To_PRF[currentInst.Ard] = currentInst.previousPhysDest;
         }
-        
+        // This is because the unique identifier is also used as an index in the ROB and so we must decrement it as we branch
+        currentUniqueInstructionIdentifier--;
         ReorderBuffer->ReorderBuffer.pop_back();
     }
 }
@@ -823,14 +826,14 @@ void cycle(){
     //HazardDetectionUnit->printRAW();
 
     cout << "\nCurrent instruction(s) in the IF: ";
-    for (string i : IF_inst){
-        cout << i << "   ||   ";
+    for (int i = 0; i < IF_inst.size(); i++){//string i : IF_inst){
+        cout << IF_inst[i] << " [" << IF_ID[i].uniqueInstructionIdentifer << "] " << "   ||   ";
     } cout << endl;
 
     cout << "Current instruction(s) in the ID: ";
     for (DecodedInstruction d : ID_gui){
         if (d.state != EMPTY){
-            d.printHuman();
+            d.printHuman(); cout << "[" << d.uniqueInstructionIdentifer << "] ";
         } else {
             cout << "\t";
         }      
@@ -905,7 +908,7 @@ void cycle(){
     }
     cout << "\n" << endl;
     cout << "========== Re-order buffer ==========" << endl;
-    cout << "Entry\trd\tValue\tInstruction" << endl;
+    cout << "Entry\trd\tValue\tInstruction\t\tUniqueID" << endl;
     for (int i = 0; i < ReorderBuffer->ReorderBuffer.size(); i++){
         cout << i << "\t" << ReorderBuffer->ReorderBuffer.at(i).first.rd << "\t";
 
@@ -916,7 +919,7 @@ void cycle(){
         }
         cout << "\t";
         ReorderBuffer->ReorderBuffer.at(i).first.printHuman();
-        cout << endl;
+        cout << "\t\t" << ReorderBuffer->ReorderBuffer.at(i).first.uniqueInstructionIdentifer << endl;
     }
     cout << "=====================================" << endl;
 
@@ -955,36 +958,49 @@ void fetch(){
 
     // Run through every channel of the processor
     for (int i = 0; i < IF_ID.size(); i++){
-
+        cout << "fetch " << i << endl;
         if (IF_ID[i].state == BLOCK || IF_ID[i].state == CURRENT){
                 // We cannot collect any instructions from memory and pass it into IF_ID_Inst
                 cout << "Fetch() BLOCKED" << endl;
-                IF_inst[i] = "";
+                IF_inst[i] = /*IF_ID[i].instruction*/IF_inst[i] + " :3:";
                 continue;
             }
         // else if IF_ID_Inst.state = NEXT or EMPTY - it shouldnt be equal to NEXT here but we check anyway
-
         IF_ID[i].state = CURRENT;
         
         // Load the memory address that is in the instruction memory address that is pointed to by the PC
         IF_ID[i].instruction = instrMemory.at(PC);
         IF_ID[i].uniqueInstructionIdentifer = currentUniqueInstructionIdentifier;
 
-        PC++;
-        currentUniqueInstructionIdentifier++;
-
         // Debugging/GUI to show the current instr in the processor
         IF_inst[i] = IF_ID[i].instruction;
 
         if (IF_ID[i].instruction.empty()) {
             IF_ID[i].state = EMPTY;
-            return;
+            cout << "STUPID IDIOT IS EMPTY: " <<IF_ID[i].instruction << endl;
+            continue;
         } else {
             // If it is not empty then we have successfully fetched the instruction
             IF_ID[i].state = NEXT;
 
+            // If we have a viable inst, then we can create an emtpty entry in the ROB
+            bool IsROBFull = ReorderBuffer->CreateEmptyEntryInROB(IF_ID[i].uniqueInstructionIdentifer);
+            cout << "Just below the creation of empty entries: " << IF_inst[i] << endl;
+            if (IsROBFull){
+                cout << "Fetch() BLOCKED due to full ROB. BLOCK OCCURS FOR " << IF_ID[i].instruction << "with uniqueID of [" << IF_ID[i].uniqueInstructionIdentifer << "]" << endl;
+                IF_ID[i].state = EMPTY;
+                continue;
+            } else {
+                // Now we can increment the PC and unique identifier for the nexts insts
+                PC++;
+                currentUniqueInstructionIdentifier++;// THe UNIQUE IDENTIFIER IS BEING UPDATED WHEN IT SHOULDNT BE
+            }
             std::cout << "CIR has current value: " << IF_ID[i].instruction << std::endl;
         }
+
+        
+
+        
 
         // INCORRECT \/\/
         /* We DO NOT UPDATE the PC here but instead we do it in the DECODE stage as this will help with pipelining branches later on */
@@ -1002,31 +1018,44 @@ void decode(){
 
     // Cycle through every channel
     for (int i = 0; i < ID_I.size(); i++){
+
         if (ID_I[i].state == CURRENT || ID_I[i].state == BLOCK || ID_I[i].state == NEXT){
 
-            IF_ID[i].state = BLOCK;
+            IF_ID[i].state = BLOCK;  
             // Debugging/gui
-            // ID_gui[i] = DecodedInstruction();
+            ID_gui[i] = DecodedInstruction();
             continue;
         }
 
         // State checking for previous registers
         if (IF_ID[i].state == NEXT || IF_ID[i].state == BLOCK || IF_ID[i].state == CURRENT){
                 IF_ID[i].state = CURRENT;
+                cout << IF_ID[i].instruction << " gets set to CURRENT." << endl; 
         }
         else {
             // Decode() cannot be run with no inputs and so we return
             ID_gui[i] = DecodedInstruction();
             continue;
         }
-        
+
         // Make new inst instance for decoded inst
         DecodedInstruction parsedInst;
         parsedInst.state = CURRENT;
     
-        parsedInst.uniqueInstructionIdentifer = IF_ID[i].uniqueInstructionIdentifer;     // Give the current instruction an identifier
-        //currentUniqueInstructionIdentifier++;                                           // Update currentUniqueInstructionIdentifier for the next instruciton that enters IDI in the pipeline
+        parsedInst.uniqueInstructionIdentifer = IF_ID[i].uniqueInstructionIdentifer;     // Give the current instruction an identifier        
         
+        // We need to fetch AND decode instructions in the correct order and so here we check if there have been any instructions that have been fetched but NOT decoded first
+        // This forces fetch and decoded to be done in order for all instructions (I hope)
+        bool IsInstInOrder = ReorderBuffer->CheckInstructionsBeforeAreNotEMPTY(parsedInst.uniqueInstructionIdentifer);
+
+        if (!IsInstInOrder){
+            IF_ID[i].state = BLOCK;
+            cout << "FETCH BLOCKED (" << i << ") BECAUSE OF INCORRECT FETCH AND DECODE ORDER: " << i << endl;
+
+            ID_gui[i] = DecodedInstruction();
+            continue;
+        }
+
         std::vector<std::string> splitCIR = split(IF_ID[i].instruction, ' '); // split the instruction based on ' ' and decode instruction like that
         
         // Throws error if there isn't any instruction to be loaded
@@ -1104,11 +1133,11 @@ void decode(){
         else if (splitCIR.at(0).compare("LSHFT")== 0) parsedInst.OpCode = LSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
         else if (splitCIR.at(0).compare("RSHFT")== 0) parsedInst.OpCode = RSHFT;       // IMMEDIATE = stoi(splitCIR.at(3)); }
 
-        else if (splitCIR.at(0).compare("JMP")  == 0) { parsedInst.OpCode = JMP; parsedInst.IsWriteBack = false; parsedInst.IsBranchInst = true; currentSideOfBranch = (currentSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES; }
-        else if (splitCIR.at(0).compare("JMPI") == 0) { parsedInst.OpCode = JMPI; parsedInst.IsWriteBack = false; parsedInst.IsBranchInst = true; currentSideOfBranch = (currentSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES; }
-        else if (splitCIR.at(0).compare("BNE")  == 0) { parsedInst.OpCode = BNE; parsedInst.IsWriteBack = false; parsedInst.IsBranchInst = true; currentSideOfBranch = (currentSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES; }
-        else if (splitCIR.at(0).compare("BPO")  == 0) { parsedInst.OpCode = BPO; parsedInst.IsWriteBack = false; parsedInst.IsBranchInst = true; currentSideOfBranch = (currentSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES; }
-        else if (splitCIR.at(0).compare("BZ")   == 0) { parsedInst.OpCode = BZ; parsedInst.IsWriteBack = false; parsedInst.IsBranchInst = true; currentSideOfBranch = (currentSideOfBranch + 1) % MAX_NUMBER_OF_BRANCH_SIDES; }
+        else if (splitCIR.at(0).compare("JMP")  == 0) { parsedInst.OpCode = JMP; parsedInst.IsWriteBack = false; parsedInst.IsBranchInst = true; currentSideOfBranch++; }
+        else if (splitCIR.at(0).compare("JMPI") == 0) { parsedInst.OpCode = JMPI; parsedInst.IsWriteBack = false; parsedInst.IsBranchInst = true; currentSideOfBranch++; }
+        else if (splitCIR.at(0).compare("BNE")  == 0) { parsedInst.OpCode = BNE; parsedInst.IsWriteBack = false; parsedInst.IsBranchInst = true; currentSideOfBranch++; }
+        else if (splitCIR.at(0).compare("BPO")  == 0) { parsedInst.OpCode = BPO; parsedInst.IsWriteBack = false; parsedInst.IsBranchInst = true; currentSideOfBranch++; }
+        else if (splitCIR.at(0).compare("BZ")   == 0) { parsedInst.OpCode = BZ; parsedInst.IsWriteBack = false; parsedInst.IsBranchInst = true; currentSideOfBranch++; }
 
         else if (splitCIR.at(0).compare("HALT") == 0) { parsedInst.OpCode = HALT; parsedInst.IsWriteBack = false; }
         else if (splitCIR.at(0).compare("NOP")  == 0) { parsedInst.OpCode = NOP; parsedInst.IsWriteBack = false; }
@@ -1178,6 +1207,7 @@ void decode(){
 
                 if (!IsRegisterValidForExecution(&parsedInst.rd, &parsedInst.DEST, parsedInst.uniqueInstructionIdentifer)){
                     parsedInst.state = BLOCK;
+                    cout << "register is not valid forexecution and so it is blocked here "; parsedInst.printHuman(); cout << endl;
                 } else; // We either BLOCK or NEXT depending on the validity of the other registers
             }
         }  
@@ -1224,13 +1254,20 @@ void issue(){
         I_gui[i] = DecodedInstruction();
 
         if (ID_I[i].state == EMPTY || ID_I[i].state == CURRENT){
-            break;
+            // Increment/decrement the timer depending on the direction of issuing
+            if (!IsIssuingLeftToRight){
+                i--;
+            } else {
+                i++;
+            }
+            continue;
         }
         
 
         bool IsInstInROB = ReorderBuffer->IsInstInROB(ID_I[i]);
 
         if (IsInstInROB) {
+            cout << "FOUND IN ROB "; ID_I[i].printHuman(); std::cout << endl;
             ////////////////////////////
             ///// ISSUING INTO RVS /////
             ///////////////////////////
@@ -1253,6 +1290,8 @@ void issue(){
                 throw std::invalid_argument("Could no issue an unknown instruction: " + ID_I_Inst.OpCode);
             }
 
+        } else {
+            cout << "NOT FOUND IN ROB"; ID_I[i].printHuman(); std::cout << endl;
         }
 
         // Increment/decrement the timer depending on the direction of issuing
