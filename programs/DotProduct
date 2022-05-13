@@ -1,0 +1,54 @@
+LDI r0 1
+STOI 2 r0
+LDI r0 2
+STOI 3 r0
+LDI r0 3
+STOI 4 r0
+LDI r0 4
+STOI 5 r0
+LDI r0 5
+STOI 6 r0
+
+LDI r0 6
+STOI 8 r0
+LDI r0 7
+STOI 9 r0
+LDI r0 8
+STOI 10 r0
+LDI r0 9
+STOI 11 r0
+LDI r0 10
+STOI 12 r0
+
+
+
+
+// Dot product
+
+// start of v0 and v1 respectively
+LDI r0 2
+LDI r1 8
+
+// length of vectors (5)
+LDI r2 5
+
+// index i for for loop
+LDI r3 0
+
+// intialise the output
+LDI r7 0
+
+// Position in file to jump back to
+LDI r9 26
+
+// Load, calculate inner product then sum
+LDA r4 r0 r3
+LDA r5 r1 r3
+MUL r6 r4 r5
+ADD r7 r7 r6
+
+ADDI r3 r3 1
+CMP r8 r3 r2
+BNE r9 r8
+STOI 0 r7
+HALT

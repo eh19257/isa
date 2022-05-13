@@ -193,4 +193,4 @@ const int NUMBER_OF_ALU = 2;
 const int NUMBER_OF_BU = 1;
 const int NUMBER_OF_LSU = 1;
 
-const int SUPERSCALAR_WIDTH = 1;
+const int SUPERSCALAR_WIDTH = 4;

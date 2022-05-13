@@ -1,0 +1,38 @@
+// Fibonacci
+
+// Load the first 2 terms into regs and memory
+LDI r0 0
+STOI 0 r0
+LDI r1 1
+STOI 1 r1
+
+// Initialise the sum register to 0
+LDI r2 0
+
+// index of sequence - counter we call i
+LDI r3 2
+
+// Size of sequence
+LDI r4 10
+
+// EOF to jump to after the for loop
+LDI r5 17
+
+// Position in file the for loop starts at
+LDI r6 9
+
+CMP r7 r3 r4
+BZ r5 r7
+
+// add and store value
+ADD r2 r1 r0
+STO r3 r2
+
+// rearrange the registers so we can maximise the regitser memory use
+MV r0 r1
+MV r1 r2
+
+// Checking conditions for the do while loop still match
+ADDI r3 r3 1
+JMP r6
+HALT
