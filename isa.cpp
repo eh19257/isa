@@ -741,7 +741,7 @@ void flushPipeline(int thisSideOfBranch, int uniqueInstID){
         // Reload/revert the mapping in the ARF_To_PRF and return the taken registers as valid
         DecodedInstruction currentInst = ReorderBuffer->ReorderBuffer.back().first;
 
-        if (currentInst.IsWriteBack){
+        if (currentInst.IsWriteBack && currentInst.state != EMPTY){
             PhysRegisterFile.at(currentInst.rd).second = true;
             ARF_To_PRF[currentInst.Ard] = currentInst.previousPhysDest;
         }

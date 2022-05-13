@@ -122,7 +122,7 @@ struct DecodedInstruction {
 
     Instruction OpCode;         // OP code of the instruction
 
-    int sideOfBranch = 2147483646;
+    int sideOfBranch = 2147483647;
 
     int previousPhysDest = -1;
     
@@ -193,4 +193,4 @@ const int NUMBER_OF_ALU = 2;
 const int NUMBER_OF_BU = 1;
 const int NUMBER_OF_LSU = 1;
 
-const int SUPERSCALAR_WIDTH = 4;
+const int SUPERSCALAR_WIDTH = 1;

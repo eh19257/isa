@@ -207,6 +207,7 @@ class ROB {
                 } 
                 else if (top.first.state == CURRENT && top.first.IsMemoryOperation){
                     ReorderBuffer.at(topPointer).first.state = NEXT;
+                    //topPointer++;
                     break;
                 } else {
                     break;
