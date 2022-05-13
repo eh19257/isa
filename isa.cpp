@@ -944,7 +944,7 @@ void cycle(){
 
     cout << "\n\n" << endl;
     if (PRINT_REGISTERS_FLAG) printPhysRegisterFile();//printArchRegisterFile(64);
-    if (PRINT_MEMORY_FLAG) outputAllMemory(11);//amount_of_instruction_memory_to_output);
+    if (PRINT_MEMORY_FLAG) outputAllMemory(30);//amount_of_instruction_memory_to_output);
 
     std::cout << "---------- Cycle " << numOfCycles << " completed. ----------\n"<< std::endl;
     numOfCycles++;

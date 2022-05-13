@@ -1,0 +1,83 @@
+// Matrix multiplication
+LDI r0 1
+STOI 0 r0
+LDI r0 2
+STOI 1 r0
+LDI r0 3
+STOI 2 r0
+LDI r0 4
+STOI 3 r0
+
+LDI r0 5
+STOI 5 r0
+LDI r0 7
+STOI 6 r0
+LDI r0 6
+STOI 7 r0
+LDI r0 8
+STOI 8 r0
+
+
+// offset of matrix 2 and offset of result matrix
+LDI r14 5
+LDI r15 10
+
+// column/row size of the matix
+LDI r0 2
+
+// indexes i, j, k in order
+LDI r1 0
+LDI r2 0
+LDI r3 0
+
+// IJTOP
+
+// Freshen the sum for this element
+LDI r5 0
+
+//KTOP
+
+// Load A element of the matrix into r7
+MUL r6 r0 r1
+LDA r7 r6 r3
+
+// Load B element of the matrix into r8
+MUL r6 r0 r2
+ADD r6 r6 r3
+LDA r8 r6 r14
+
+// for mini inner product of these 2 elements
+MUL r9 r7 r8
+ADD r5 r5 r9
+
+// increment k and then check to jump
+ADDI r3 r3 1
+CMP r10 r3 r0
+
+// JMP to KTOP
+LDI r11 23
+BNE r11 r10
+
+// store the result
+MUL r12 r1 r0
+ADD r12 r12 r2
+STOA r12 r15 r5 
+
+// rest the k loop, increment j and see if the j loop ends
+LDI r3 0
+ADDI r2 r2 1
+CMP r13 r2 r0
+
+// if we need to jump (inside the loop) to IJTOP
+LDI r11 22
+BNE r11 r13
+
+// reset the j loop, increment i and see if the i loop ends
+LDI r2 0
+ADDI r1 r1 1
+CMP r10 r1 r0
+
+// jmp to IJTOP if we are still in the loop
+LDI r11 22
+BNE r11 r10
+HALT
