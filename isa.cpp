@@ -122,7 +122,7 @@ void memoryAccess();
 void writeBack();
 
 /* ISA helpers */
-void flushPipeline();
+void flushPipeline(int thisSideOfBranch, int uniqueInstID);
 bool AllEUsAndRVsEmpty();
 void initialisePRF();
 void initialiseIndexesOfLastRegisterUsedInPRF();
@@ -142,6 +142,7 @@ DecodedInstruction CheckDestinationRegisterIsValid(DecodedInstruction inst);
 
 /* Commit helpers */
 void CommitMemoryOperation(DecodedInstruction* inst);
+void HandleBranchOperations(DecodedInstruction* inst);
 
 /* Non-ISA function headers */
 void loadProgramIntoMemory();
@@ -387,7 +388,7 @@ void CheckBothRegistersAreValidForFurtherExecution(DecodedInstruction* inst){
         inst->state = BLOCK;
     }
 
-    inst->printHuman(); std::cout << " is decoded as: "; inst->print(); std::cout << " and its state is " << inst->state << endl;
+    //  inst->printHuman(); std::cout << " is decoded as: "; inst->print(); std::cout << " and its state is " << inst->state << endl;
 
     //return inst;
 }
@@ -668,12 +669,14 @@ void flushRV(std::deque<std::pair<DecodedInstruction, int>>* RV, int thisSideOfB
 }
 
 // Flushes the whole pipline
-void flushPipeline(int thisSideOfBranch){
+void flushPipeline(int thisSideOfBranch, int uniqueInstID){
     cout << "Flushing the pipeline" << endl;
 
 
     for (int i = 0; i < IF_ID.size(); i++){
-        IF_ID[i].state = EMPTY;
+        if (IF_ID[i].uniqueInstructionIdentifer > uniqueInstID){
+            IF_ID[i].state = EMPTY;
+        }
     }
 
     IF_inst = array<string, SUPERSCALAR_WIDTH>();
@@ -729,7 +732,7 @@ void flushPipeline(int thisSideOfBranch){
     flushRV(&BU_RV, thisSideOfBranch);
     flushRV(&LSU_RV, thisSideOfBranch);
 
-
+    
     // Clean the ROB
     while (ReorderBuffer->ReorderBuffer.back().first.sideOfBranch > thisSideOfBranch){
         // REMOVE entry from ROB
@@ -802,6 +805,12 @@ void CommitMemoryOperation(DecodedInstruction* inst){
     // DONE SO THAT THE ROB IS UPDATED
 }
 
+// Handle Branch operations at ROB
+void HandleBranchOperations(DecodedInstruction* inst){
+    PC = inst->OUT;
+    flushPipeline(inst->sideOfBranch, inst->uniqueInstructionIdentifer);
+}
+
 #pragma endregion Commit Helpers
 
 #pragma region F/D/E/M/W/
@@ -830,6 +839,11 @@ void cycle(){
         cout << IF_inst[i] << " [" << IF_ID[i].uniqueInstructionIdentifer << "] " << "   ||   ";
     } cout << endl;
 
+    cout << "Current Registers for IF/ID: ";
+    for (int i = 0; i < IF_ID.size(); i++){
+        cout << IF_ID[i].instruction << " :" << IF_ID[i].state << ":   ||   ";
+    } cout << endl;
+
     cout << "Current instruction(s) in the ID: ";
     for (DecodedInstruction d : ID_gui){
         if (d.state != EMPTY){
@@ -838,6 +852,11 @@ void cycle(){
             cout << "\t";
         }      
         cout << "   ||   ";
+    } cout << endl;
+
+    cout << "Registers for ID/I: ";
+    for (int i = 0; i < ID_I.size(); i++){
+        ID_I[i].printHuman(); cout << "   ||   ";
     } cout << endl;
 
     cout << "Current instruction(s) in the I: ";
@@ -892,16 +911,16 @@ void cycle(){
             cout << " || ";
         } cout << endl;
             
-    cout << "\n\tALU_RV\t\tBU_RV \t\tLSU_RV" << endl;
+    cout << "\n\tALU_RV\t\t\tBU_RV \t\t\tLSU_RV" << endl;
     for (int i = 0; i < MAX_RV_SIZE; i++){
         cout << i << "\t";
-        if (ALU_RV.size() <= i) cout << "\t\t";
+        if (ALU_RV.size() <= i) cout << "\t\t\t";
         else { ALU_RV.at(i).first.printHuman(); cout << "\t"; }
 
-        if (BU_RV.size() <= i) cout << "\t\t";
+        if (BU_RV.size() <= i) cout << "\t\t\t";
         else { BU_RV.at(i).first.printHuman(); cout << "\t"; }
     
-        if (LSU_RV.size() <= i) cout << "\t\t";
+        if (LSU_RV.size() <= i) cout << "\t\t\t";
         else { LSU_RV.at(i).first.printHuman(); cout << "\t"; }
         
         cout << endl;
@@ -958,13 +977,19 @@ void fetch(){
 
     // Run through every channel of the processor
     for (int i = 0; i < IF_ID.size(); i++){
-        cout << "fetch " << i << endl;
         if (IF_ID[i].state == BLOCK || IF_ID[i].state == CURRENT){
+            // quickly check if this instruction is empty or not
+            if (IF_ID[i].instruction.empty()){
+                IF_ID[i].state = EMPTY;
+                continue;
+            } else {
                 // We cannot collect any instructions from memory and pass it into IF_ID_Inst
                 cout << "Fetch() BLOCKED" << endl;
                 IF_inst[i] = /*IF_ID[i].instruction*/IF_inst[i] + " :3:";
+                IF_ID[i].state = NEXT;
                 continue;
-            }
+            }     
+        }
         // else if IF_ID_Inst.state = NEXT or EMPTY - it shouldnt be equal to NEXT here but we check anyway
         IF_ID[i].state = CURRENT;
         
@@ -972,12 +997,14 @@ void fetch(){
         IF_ID[i].instruction = instrMemory.at(PC);
         IF_ID[i].uniqueInstructionIdentifer = currentUniqueInstructionIdentifier;
 
+        //cout << "fetch " << i << ": " << IF_ID[i].instruction << "." << endl;
+
         // Debugging/GUI to show the current instr in the processor
         IF_inst[i] = IF_ID[i].instruction;
 
         if (IF_ID[i].instruction.empty()) {
             IF_ID[i].state = EMPTY;
-            cout << "STUPID IDIOT IS EMPTY: " <<IF_ID[i].instruction << endl;
+            //cout << "STUPID IDIOT IS EMPTY: " <<IF_ID[i].instruction << endl;
             continue;
         } else {
             // If it is not empty then we have successfully fetched the instruction
@@ -985,22 +1012,19 @@ void fetch(){
 
             // If we have a viable inst, then we can create an emtpty entry in the ROB
             bool IsROBFull = ReorderBuffer->CreateEmptyEntryInROB(IF_ID[i].uniqueInstructionIdentifer);
-            cout << "Just below the creation of empty entries: " << IF_inst[i] << endl;
+            //cout << "Just below the creation of empty entries: " << IF_inst[i] << endl;
             if (IsROBFull){
-                cout << "Fetch() BLOCKED due to full ROB. BLOCK OCCURS FOR " << IF_ID[i].instruction << "with uniqueID of [" << IF_ID[i].uniqueInstructionIdentifer << "]" << endl;
+                //cout << "Fetch() BLOCKED due to full ROB. BLOCK OCCURS FOR " << IF_ID[i].instruction << "with uniqueID of [" << IF_ID[i].uniqueInstructionIdentifer << "]" << endl;
                 IF_ID[i].state = EMPTY;
                 continue;
             } else {
                 // Now we can increment the PC and unique identifier for the nexts insts
                 PC++;
                 currentUniqueInstructionIdentifier++;// THe UNIQUE IDENTIFIER IS BEING UPDATED WHEN IT SHOULDNT BE
+                //cout << "PC has been incremented and we are loading in the instruction |" << IF_ID[i].instruction << "| into decode()" << endl;
             }
             std::cout << "CIR has current value: " << IF_ID[i].instruction << std::endl;
         }
-
-        
-
-        
 
         // INCORRECT \/\/
         /* We DO NOT UPDATE the PC here but instead we do it in the DECODE stage as this will help with pipelining branches later on */
@@ -1014,7 +1038,6 @@ void fetch(){
 
 // Combined Instruction Decode with Issue
 void decode(){
-    std::cout << "fuck me" << std::endl;
 
     // Cycle through every channel
     for (int i = 0; i < ID_I.size(); i++){
@@ -1030,10 +1053,11 @@ void decode(){
         // State checking for previous registers
         if (IF_ID[i].state == NEXT || IF_ID[i].state == BLOCK || IF_ID[i].state == CURRENT){
                 IF_ID[i].state = CURRENT;
-                cout << IF_ID[i].instruction << " gets set to CURRENT." << endl; 
         }
         else {
             // Decode() cannot be run with no inputs and so we return
+            //cout << "THIS SHOULD BE RUNNING AS THE REG IS EMPTY()" << endl;
+
             ID_gui[i] = DecodedInstruction();
             continue;
         }
@@ -1046,11 +1070,12 @@ void decode(){
         
         // We need to fetch AND decode instructions in the correct order and so here we check if there have been any instructions that have been fetched but NOT decoded first
         // This forces fetch and decoded to be done in order for all instructions (I hope)
+        //cout << "THIS IS A STUPID INST -->" << IF_ID[i].instruction << "<--" << endl;
         bool IsInstInOrder = ReorderBuffer->CheckInstructionsBeforeAreNotEMPTY(parsedInst.uniqueInstructionIdentifer);
 
         if (!IsInstInOrder){
             IF_ID[i].state = BLOCK;
-            cout << "FETCH BLOCKED (" << i << ") BECAUSE OF INCORRECT FETCH AND DECODE ORDER: " << i << endl;
+            cout << IF_ID[i].instruction <<" BLOCKED BECAUSE OF INCORRECT FETCH AND DECODE ORDER" << endl;
 
             ID_gui[i] = DecodedInstruction();
             continue;
@@ -1147,7 +1172,9 @@ void decode(){
 
         else throw std::invalid_argument("Unidentified Instruction: " + splitCIR.at(0));
 
-        
+        cout << "Instruction after decoding/before renaming: " << parsedInst.asString << " :" << parsedInst.state << ":" << endl;
+
+
         //////////////////////////////
         ////////// RENAMING //////////
         //////////////////////////////
@@ -1157,15 +1184,13 @@ void decode(){
         // Rename and get the values for the new instruction
         parsedInst = RegisterRenameValidityCheck(parsedInst);
 
-        cout << "asdf about to rename" << endl;
-
         // Here we apply register renaming FOR THE DESTINATIONS REGISTER
         if (parsedInst.rd != -1){
             if (parsedInst.IsWriteBack){
                 //if (parsedInst.rd != parsedInst.rs0 && parsedInst.rd != parsedInst.rs1){
                     int Prd = GetUnusedRegisterInPRF(parsedInst.rd);
 
-                    cout << "Prd for rd: " << Prd << endl;// HERE IS A PROBLEM
+                    //cout << "Prd for rd: " << Prd << endl;// HERE IS A PROBLEM
 
                     // If there are no usable registers in the PRF then we cannot continue and so the IF/IDI register must block
                     if (Prd == -1){
@@ -1207,7 +1232,7 @@ void decode(){
 
                 if (!IsRegisterValidForExecution(&parsedInst.rd, &parsedInst.DEST, parsedInst.uniqueInstructionIdentifer)){
                     parsedInst.state = BLOCK;
-                    cout << "register is not valid forexecution and so it is blocked here "; parsedInst.printHuman(); cout << endl;
+                    //cout << "register is not valid forexecution and so it is blocked here "; parsedInst.printHuman(); cout << endl;
                 } else; // We either BLOCK or NEXT depending on the validity of the other registers
             }
         }  
@@ -1267,7 +1292,7 @@ void issue(){
         bool IsInstInROB = ReorderBuffer->IsInstInROB(ID_I[i]);
 
         if (IsInstInROB) {
-            cout << "FOUND IN ROB "; ID_I[i].printHuman(); std::cout << endl;
+            //cout << "FOUND IN ROB "; ID_I[i].printHuman(); std::cout << endl;
             ////////////////////////////
             ///// ISSUING INTO RVS /////
             ///////////////////////////
@@ -1291,7 +1316,7 @@ void issue(){
             }
 
         } else {
-            cout << "NOT FOUND IN ROB"; ID_I[i].printHuman(); std::cout << endl;
+            //cout << "NOT FOUND IN ROB"; ID_I[i].printHuman(); std::cout << endl;
         }
 
         // Increment/decrement the timer depending on the direction of issuing
@@ -1344,7 +1369,7 @@ void execute(){
                 // Actually run the bad boi
                 b->cycle();
 
-                if (b->branchFlag) flushPipeline(b->In.sideOfBranch);
+                //if (b->branchFlag) flushPipeline(b->In.sideOfBranch);
 
             }
             else if (b->In.state == CURRENT) b->cycle();
@@ -1385,7 +1410,7 @@ void runThroughEUAndAddToROB(std::array<T*, SIZE> EUs){
 
                 e->Out.state = NEXT;
 
-                cout << "COMMITING result of "; e->Out.printHuman(); cout << " into the ROB" << endl;
+                //cout << "COMMITING result of "; e->Out.printHuman(); cout << " into the ROB" << endl;
                 ReorderBuffer->LoadCompletedInstructionIntoROB(e->Out);
                 
                 // Debugging/gui
@@ -1418,6 +1443,7 @@ void writeBack(){
     //cout << "Bill big nut" << endl;
     WB_gui = vector<DecodedInstruction>();
 
+    
     // Cycle though the ROB and if the instructions at the front are complete then we commit/retire them
     for (int i= 0; i < ReorderBuffer->ReorderBuffer.size(); i++){ //} (!ReorderBuffer->ReorderBuffer.empty()){
         //std::cout << "I doubt this runs" << endl;
@@ -1428,7 +1454,6 @@ void writeBack(){
             break;
         }
 
-        //cout << "looping in WB with current instruction: "; entry.first.printHuman(); cout << endl;
         // Debugging/GUI
         WB_gui.push_back(entry.first);
 
@@ -1450,12 +1475,19 @@ void writeBack(){
                 ReorderBuffer->ReorderBuffer.at(i).second.Value(ReorderBuffer->ReorderBuffer.at(i).first.OUT);
             }
             //break; THIS BREAK MIGHTVE MADE IT WORSE BUT IM GOING TO BED
-
+            break;
             // Tell the ROB that the instruction is complete
             //ReorderBuffer->ReorderBuffer.at(i).first.state = NEXT;
         } else if (entry.first.IsMemoryOperation && entry.first.state == NEXT){
             // DO fuck all
             cout << "PR" <<entry.first.DEST << " is actually going down the right path of execution" << endl;
+        } 
+        // The case of BRANCH OPERATIONS
+        else if (entry.first.IsBranchInst && entry.first.state == NEXT){
+            if (entry.first.branchFlag){
+                cout << "Branch is about to be performed by:"; entry.first.printHuman(); cout << endl;
+                HandleBranchOperations(&ReorderBuffer->ReorderBuffer.at(i).first);
+            }
         } else {
             if (entry.second.HasValue() && entry.first.IsWriteBack){
 
@@ -1469,6 +1501,42 @@ void writeBack(){
         }
         
     }
+    
+   /*for (int i = 0; i < ReorderBuffer->ReorderBuffer.size(); i++){
+
+       std::pair<DecodedInstruction, Optional<int>> entry = ReorderBuffer->ReorderBuffer.at(i);
+       
+       if (entry.first.state == NEXT){
+           if (entry.first.IsWriteBack){
+               PhysRegisterFile.at(entry.first.DEST).first = entry.second.Value();
+               PhysRegisterFile.at(entry.first.DEST).second = true;
+           }
+           else if (entry.first.IsBranchInst){
+               if (entry.first.branchFlag){
+                   HandleBranchOperations(&ReorderBuffer->ReorderBuffer.at(i).first);
+               }
+           } else {
+               // Do nothing if it is a memory operation or a non writeback instruction
+           }
+        }
+        else if (ReorderBuffer->ReorderBuffer.at(i).first.state == CURRENT){
+            if (entry.first.IsMemoryOperation){
+                CommitMemoryOperation(&ReorderBuffer->ReorderBuffer.at(i).first);
+
+                if (ReorderBuffer->ReorderBuffer.at(i).first.IsWriteBack){
+                    ReorderBuffer->ReorderBuffer.at(i).second.Value(ReorderBuffer->ReorderBuffer.at(i).first.OUT);
+                }
+            } else {
+                break;
+            }
+        } 
+        else {
+            // If the entry is a EMPTY or BLOCK then we dont care and we break
+            break;
+        }
+
+   }*/
+
     // This check is needed so we dont access invalid memory
     if (!systemHaltFlag){
         // CLEAN UP THE ROB

@@ -118,9 +118,11 @@ struct DecodedInstruction {
     bool IsBranchInst = false;
     bool IsMemoryOperation = false;
 
+    bool branchFlag = false;    // Used to tell the processor that this instruction caused a branch
+
     Instruction OpCode;         // OP code of the instruction
 
-    int sideOfBranch = 0;
+    int sideOfBranch = 2147483646;
 
     int previousPhysDest = -1;
     

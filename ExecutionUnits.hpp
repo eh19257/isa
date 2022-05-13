@@ -131,29 +131,6 @@ class ROB {
             throw std::invalid_argument("Unable to find the correct position in the ROB for the instruction " + inst.asString + " to be loaded into.");
             return false;
             
-            
-            /*
-            if (ReorderBuffer.size() >= MAX_NUMBER_OR_ROB_ENTRIES) {
-                return false;
-            } else {
-                if (inst.IsMemoryOperation){
-                    inst.state = BLOCK;
-                } else {
-                    inst.state = CURRENT;
-                }
-                
-                // Position the inst in the correct place in the ROB
-                for (int i = 0; i < ReorderBuffer.size(); i++){
-                    if (ReorderBuffer.at(i).first.uniqueInstructionIdentifer > inst.uniqueInstructionIdentifer){
-                        ReorderBuffer.insert(ReorderBuffer.begin() + i, std::pair<DecodedInstruction, Optional<int>>(inst, Optional<int>()));
-                        return true;
-                    }
-                }
-                // If we cannot find a specific place to insert the instuction, then we push it onto the back
-                ReorderBuffer.push_back(std::pair<DecodedInstruction, Optional<int>>(inst, Optional<int>()));
-                return true;
-            }
-            */
         }
     
          // Returns false if an an entry was found in the ROB and it has not completed excution
@@ -198,9 +175,10 @@ class ROB {
             return IsFowardedValueInROB;
         }
 
+        /*
         DecodedInstruction BlockInstructionIfNotIsWriteBack(DecodedInstruction inst){
             // If this is a write back instruction then we can ignore this special case and use the ROB as it was intended
-            /*if (!inst.IsWriteBack) {
+            if (!inst.IsWriteBack) {
                 // If this instrucion isn't a writeback, then we must check that no other !isWriteBack instruction is going to 
                 // -1 so we dont include the current instruction
                 for (int i = 0; i < ReorderBuffer.size() - 1 && ReorderBuffer.at(i).first.uniqueInstructionIdentifer != inst.uniqueInstructionIdentifer; i++){
@@ -209,9 +187,9 @@ class ROB {
                         break;
                     }
                 }
-            }*/
+            }
             return inst;
-        }
+        }*/
 
         // Cleans the ROB of any correctly completed instructions
         void CleanROB(){
@@ -220,7 +198,7 @@ class ROB {
             int topPointer = 0;
             
             while (topPointer < ReorderBuffer.size()){
-                std::cout << "topPointer: " << topPointer << std::endl;
+                //std::cout << "topPointer: " << topPointer << std::endl;
                 std::pair<DecodedInstruction, Optional<int>> top = ReorderBuffer.at(topPointer);
 
                 // Here we only remove entries from the top of the ROB so as to stop a fractured ROB from occuring
@@ -229,33 +207,10 @@ class ROB {
                 } 
                 else if (top.first.state == CURRENT && top.first.IsMemoryOperation){
                     ReorderBuffer.at(topPointer).first.state = NEXT;
-                    topPointer++;
+                    break;
                 } else {
                     break;
                 }
-
-                /*
-
-                if (top.first.IsMemoryOperation){
-                    if (top.first.state == NEXT) {
-                        ReorderBuffer.erase(ReorderBuffer.begin() + topPointer);
-                    } else if (top.first.state == CURRENT) {
-                        ReorderBuffer.at(topPointer).first.state = NEXT;
-                        topPointer++;
-                    } else {
-                        break;
-                    }
- 
-                } else {
-                    // case where we are not dealing with a memory op
-                    if (top.first.state == NEXT){
-                        ReorderBuffer.erase(ReorderBuffer.begin() + topPointer);
-                    } else {
-                        break;
-                    }
-
-                }
-                */
             }
         }
 
@@ -264,20 +219,20 @@ class ROB {
             if (ReorderBuffer.size() >= MAX_NUMBER_OR_ROB_ENTRIES) {
                 return true;
             }
-            std::cout << "bustin" << std::endl;
+            //std::cout << "bustin" << std::endl;
             DecodedInstruction inst = DecodedInstruction();
             inst.uniqueInstructionIdentifer = uniqueId;
 
             // now we can add it to the ROB in the correct spot
             std::pair<DecodedInstruction, Optional<int>> emptyEntry = std::pair<DecodedInstruction, Optional<int>>(inst, Optional<int>());
             if (ReorderBuffer.empty()){
-                std::cout << "ROB PUSH BACK OF EMPTY ENTRY" << std::endl;
+                //std::cout << "ROB PUSH BACK OF EMPTY ENTRY" << std::endl;
                 ReorderBuffer.push_back(emptyEntry);
             } else {
-                std::cout << "Oh No" << std::endl;
-                std::cout << "Front unique number is: " << ReorderBuffer.front().first.uniqueInstructionIdentifer << " and the unique number for this inst: " << emptyEntry.first.uniqueInstructionIdentifer << std::endl;
+                //std::cout << "Oh No" << std::endl;
+                //std::cout << "Front unique number is: " << ReorderBuffer.front().first.uniqueInstructionIdentifer << " and the unique number for this inst: " << emptyEntry.first.uniqueInstructionIdentifer << std::endl;
                 ReorderBuffer.insert(ReorderBuffer.begin() + (inst.uniqueInstructionIdentifer - ReorderBuffer.front().first.uniqueInstructionIdentifer), emptyEntry);
-                std::cout << "It's here with entry.uniqueID: " << ReorderBuffer.back().first.uniqueInstructionIdentifer << std::endl;
+                //std::cout << "It's here with entry.uniqueID: " << ReorderBuffer.back().first.uniqueInstructionIdentifer << std::endl;
             }
             return false;
         }
@@ -472,9 +427,10 @@ class BU : public ExecutionUnit{
         switch(In.OpCode){
             case JMP:
                 Out.OUT = In.DEST;//registerFile[BUD];      // Again as in STO, is accessing the register file at this point illegal?
+                Out.branchFlag = true;
 
-                branchFlag = true;
-                *PC = Out.OUT;
+                //branchFlag = true;
+                //*PC = Out.OUT;
 
                 ///* STATS */ numOfBranches++;
                 //cout << "BRANCH" << endl;
@@ -482,9 +438,9 @@ class BU : public ExecutionUnit{
 
             case JMPI:
                 Out.OUT = In.OUT + In.DEST;//registerFile[BUD]; // WARNING ERROR HERE
-
-                branchFlag = true;
-                *PC = Out.OUT;
+                Out.branchFlag = true;
+                //branchFlag = true;
+                //*PC = Out.OUT;
                 
                 ///* STATS */ numOfBranches++;
                 //cout << "BRANCH" << endl;
@@ -493,9 +449,9 @@ class BU : public ExecutionUnit{
             case BNE:
                 if (In.IN0 < 0) {
                     Out.OUT = In.DEST;//PC = registerFile[BUD];
-                    
-                    branchFlag = true;
-                    *PC = Out.OUT;
+                    Out.branchFlag = true;
+                    //branchFlag = true;
+                    //*PC = Out.OUT;
 
                     ///* STATS */ numOfBranches++;
                     //cout << "BRANCH" << endl;
@@ -505,9 +461,9 @@ class BU : public ExecutionUnit{
             case BPO:
                 if (In.IN0 > 0) {
                     Out.OUT = In.DEST;//PC = registerFile[BUD];
-                    
-                    branchFlag = true;
-                    *PC = Out.OUT;
+                    Out.branchFlag = true;
+                    //branchFlag = true;
+                    //*PC = Out.OUT;
 
                     ///* STATS */ numOfBranches++;
                     //cout << "BRANCH" << endl;
@@ -517,9 +473,9 @@ class BU : public ExecutionUnit{
             case BZ:
                 if (In.IN0 == 0) {
                     Out.OUT = In.DEST;//PC = registerFile[BUD];
-                    
-                    branchFlag = true;
-                    *PC = Out.OUT;
+                    Out.branchFlag = true;
+                    //branchFlag = true;
+                    //*PC = Out.OUT;
 
                     ///* STATS */ numOfBranches++;
                     //cout << "BRANCH" << endl; 
@@ -538,6 +494,77 @@ class BU : public ExecutionUnit{
         
             default:
                 throw std::invalid_argument("BU cannot execute instruction: " + In.OpCode);
+
+            /*
+            case JMP:
+                Out.OUT = In.DEST;//registerFile[BUD];      // Again as in STO, is accessing the register file at this point illegal?
+
+                branchFlag = true;
+                *PC = Out.OUT;
+
+                // STATS  numOfBranches++;
+                //cout << "BRANCH" << endl;
+                break;
+
+            case JMPI:
+                Out.OUT = In.OUT + In.DEST;//registerFile[BUD]; // WARNING ERROR HERE
+
+                branchFlag = true;
+                *PC = Out.OUT;
+                
+                // STATS  numOfBranches++;
+                //cout << "BRANCH" << endl;
+                break;
+
+            case BNE:
+                if (In.IN0 < 0) {
+                    Out.OUT = In.DEST;//PC = registerFile[BUD];
+                    
+                    branchFlag = true;
+                    *PC = Out.OUT;
+
+                    // STATS numOfBranches++;
+                    //cout << "BRANCH" << endl;
+                }
+                break;
+
+            case BPO:
+                if (In.IN0 > 0) {
+                    Out.OUT = In.DEST;//PC = registerFile[BUD];
+                    
+                    branchFlag = true;
+                    *PC = Out.OUT;
+
+                    // STATS numOfBranches++;
+                    //cout << "BRANCH" << endl;
+                }
+                break;
+
+            case BZ:
+                if (In.IN0 == 0) {
+                    Out.OUT = In.DEST;//PC = registerFile[BUD];
+                    
+                    branchFlag = true;
+                    *PC = Out.OUT;
+
+                    // STATS numOfBranches++;
+                    //cout << "BRANCH" << endl; 
+                }
+                break;
+            
+            case HALT:                   // #####################
+                this->haltFlag = true;
+                break;
+
+            case NOP:
+                std::cout << "NOP EXECUTED!!!" << std::endl;
+                //int foo;
+                //std::cin >> foo;
+                break;
+        
+            default:
+                throw std::invalid_argument("BU cannot execute instruction: " + In.OpCode);
+            */
         }
 
         // Load the output into the correct row in the RAW table
